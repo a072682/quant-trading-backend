@@ -30,7 +30,9 @@ def _fetch_yfinance_data(ticker_symbol: str) -> dict:
     try:
         info = ticker.info
         dividend_yield = info.get("dividendYield")  # 例如 0.065 代表 6.5%
-    except Exception:
+        print(f"[yfinance] {ticker_symbol} 殖利率原始值: {dividend_yield}")
+    except Exception as e:
+        print(f"[yfinance] {ticker_symbol} 殖利率取得失敗: {e}")
         dividend_yield = None
 
     return {
