@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db, get_current_user
@@ -28,6 +29,17 @@ async def get_today_signal(
         )
 
     return APIResponse(message="取得今日評分成功", data=signal)
+
+
+@router.get("/history/{stock_code}", response_model=APIResponse[List[SignalOut]])
+async def get_signal_history(
+    stock_code: str,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """取得指定股票最近 30 筆歷史評分記錄"""
+    records = await signal_service.get_signal_history(stock_code, db)
+    return APIResponse(message="取得歷史評分成功", data=records)
 
 
 @router.post("/run-now", response_model=APIResponse[None])

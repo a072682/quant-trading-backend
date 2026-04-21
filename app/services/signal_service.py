@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, desc
 
 from app.models.signal import Signal
 from app.services.ai_service import ai_service
@@ -232,3 +232,14 @@ async def get_today_signal(stock_code: str, db: AsyncSession) -> Signal:
         )
     )
     return result.scalars().first()
+
+
+async def get_signal_history(stock_code: str, db: AsyncSession) -> list[Signal]:
+    """從資料庫查詢指定股票最近 30 筆歷史評分，依日期降冪排列"""
+    result = await db.execute(
+        select(Signal)
+        .where(Signal.stock_code == stock_code)
+        .order_by(desc(Signal.date))
+        .limit(30)
+    )
+    return result.scalars().all()
