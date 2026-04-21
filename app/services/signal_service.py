@@ -146,12 +146,11 @@ async def calculate_score(stock_code: str) -> dict:
             else:
                 volume_score = -1
 
-        # 殖利率得分
+        # 殖利率得分（yfinance 回傳已是百分比，如 9.93 代表 9.93%）
         if dividend_yield is not None:
-            yield_pct = dividend_yield * 100  # 轉為百分比
-            if yield_pct >= 6.5:
+            if dividend_yield >= 6.5:
                 yield_score = 2
-            elif yield_pct >= 5.0:
+            elif dividend_yield >= 5.0:
                 yield_score = 1
             else:
                 yield_score = -1
