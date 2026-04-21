@@ -15,23 +15,30 @@ _thread_pool = ThreadPoolExecutor(max_workers=4)
 
 
 def _fetch_yfinance_data(ticker_symbol: str) -> dict:
-    """在執行緒中同步呼叫 yfinance，回傳均線與成交量相關數據"""
+    """在執行緒中同步呼叫 yfinance，回傳均線、成交量與殖利率相關數據"""
     ticker = yf.Ticker(ticker_symbol)
     hist = ticker.history(period="30d")
 
     if hist.empty or len(hist) < 2:
-        return {"close": None, "ma20": None, "vol_today": None, "vol_avg5": None}
+        return {"close": None, "ma20": None, "vol_today": None, "vol_avg5": None, "dividend_yield": None}
 
     close_today = float(hist["Close"].iloc[-1])
     ma20 = float(hist["Close"].tail(20).mean()) if len(hist) >= 20 else float(hist["Close"].mean())
     vol_today = float(hist["Volume"].iloc[-1])
     vol_avg5 = float(hist["Volume"].tail(6).iloc[:-1].mean()) if len(hist) >= 6 else float(hist["Volume"].mean())
 
+    try:
+        info = ticker.info
+        dividend_yield = info.get("dividendYield")  # 例如 0.065 代表 6.5%
+    except Exception:
+        dividend_yield = None
+
     return {
         "close": close_today,
         "ma20": ma20,
         "vol_today": vol_today,
         "vol_avg5": vol_avg5,
+        "dividend_yield": dividend_yield,
     }
 
 
@@ -94,15 +101,16 @@ async def _get_institutional_score(stock_code: str) -> int:
 
 async def calculate_score(stock_code: str) -> dict:
     """
-    計算指定股票的今日評分（法人 + 均線 + 成交量）
+    計算指定股票的今日評分（法人 + 均線 + 成交量 + 殖利率）
     回傳各參數得分與總分
     """
     # --- 法人得分（TWSE T86） ---
     institutional_score = await _get_institutional_score(stock_code)
 
-    # --- 均線 & 成交量得分（yfinance，非同步執行緒） ---
+    # --- 均線 & 成交量 & 殖利率得分（yfinance，非同步執行緒） ---
     ma_score = 0
     volume_score = 0
+    yield_score = 0
     ticker_symbol = f"{stock_code}.TW"
 
     try:
@@ -115,6 +123,7 @@ async def calculate_score(stock_code: str) -> dict:
         ma20 = yf_data["ma20"]
         vol_today = yf_data["vol_today"]
         vol_avg5 = yf_data["vol_avg5"]
+        dividend_yield = yf_data["dividend_yield"]
 
         # 均線得分
         if close is not None and ma20 is not None and ma20 > 0:
@@ -135,15 +144,26 @@ async def calculate_score(stock_code: str) -> dict:
             else:
                 volume_score = -1
 
-    except Exception as e:
-        print(f"  yfinance 呼叫失敗，均線/成交量得分設為 0：{e}")
+        # 殖利率得分
+        if dividend_yield is not None:
+            yield_pct = dividend_yield * 100  # 轉為百分比
+            if yield_pct >= 6.5:
+                yield_score = 2
+            elif yield_pct >= 5.0:
+                yield_score = 1
+            else:
+                yield_score = -1
 
-    total_score = institutional_score + ma_score + volume_score
+    except Exception as e:
+        print(f"  yfinance 呼叫失敗，均線/成交量/殖利率得分設為 0：{e}")
+
+    total_score = institutional_score + ma_score + volume_score + yield_score
 
     return {
         "institutional_score": institutional_score,
         "ma_score": ma_score,
         "volume_score": volume_score,
+        "yield_score": yield_score,
         "total_score": total_score,
     }
 
@@ -176,6 +196,7 @@ async def create_today_signal(
         signal.institutional_score = scores["institutional_score"]
         signal.ma_score = scores["ma_score"]
         signal.volume_score = scores["volume_score"]
+        signal.yield_score = scores["yield_score"]
         signal.total_score = scores["total_score"]
         signal.ai_action = ai_result.get("action")
         signal.ai_reason = ai_result.get("reason")
@@ -187,6 +208,7 @@ async def create_today_signal(
             institutional_score=scores["institutional_score"],
             ma_score=scores["ma_score"],
             volume_score=scores["volume_score"],
+            yield_score=scores["yield_score"],
             total_score=scores["total_score"],
             ai_action=ai_result.get("action"),
             ai_reason=ai_result.get("reason"),
