@@ -243,3 +243,11 @@ async def get_signal_history(stock_code: str, db: AsyncSession) -> list[Signal]:
         .limit(30)
     )
     return result.scalars().all()
+
+
+async def get_signals_by_date(date: str, db: AsyncSession) -> list[Signal]:
+    """從資料庫查詢指定日期所有股票的評分紀錄"""
+    result = await db.execute(
+        select(Signal).where(Signal.date == date).order_by(Signal.stock_code)
+    )
+    return result.scalars().all()

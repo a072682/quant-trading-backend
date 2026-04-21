@@ -42,6 +42,17 @@ async def get_signal_history(
     return APIResponse(message="取得歷史評分成功", data=records)
 
 
+@router.get("/by-date/{date}", response_model=APIResponse[List[SignalOut]])
+async def get_signals_by_date(
+    date: str,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """取得指定日期（YYYY-MM-DD）所有股票的評分紀錄"""
+    records = await signal_service.get_signals_by_date(date, db)
+    return APIResponse(message="取得指定日期評分成功", data=records)
+
+
 @router.post("/run-now", response_model=APIResponse[None])
 async def run_signal_now(_=Depends(get_current_user)):
     """手動觸發今日所有監控股票的評分計算"""
