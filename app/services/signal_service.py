@@ -5,8 +5,91 @@ from app.models.signal import Signal
 from app.services.ai_service import ai_service
 
 import httpx
+import yfinance as yf
+from asyncio import get_event_loop
+from concurrent.futures import ThreadPoolExecutor
 from app.core.config import settings
 from datetime import date
+
+_thread_pool = ThreadPoolExecutor(max_workers=4)
+
+
+def _fetch_yfinance_data(ticker_symbol: str) -> dict:
+    """在執行緒中同步呼叫 yfinance，回傳均線與成交量相關數據"""
+    ticker = yf.Ticker(ticker_symbol)
+    hist = ticker.history(period="30d")
+
+    if hist.empty or len(hist) < 2:
+        return {"close": None, "ma20": None, "vol_today": None, "vol_avg5": None}
+
+    close_today = float(hist["Close"].iloc[-1])
+    ma20 = float(hist["Close"].tail(20).mean()) if len(hist) >= 20 else float(hist["Close"].mean())
+    vol_today = float(hist["Volume"].iloc[-1])
+    vol_avg5 = float(hist["Volume"].tail(6).iloc[:-1].mean()) if len(hist) >= 6 else float(hist["Volume"].mean())
+
+    return {
+        "close": close_today,
+        "ma20": ma20,
+        "vol_today": vol_today,
+        "vol_avg5": vol_avg5,
+    }
+
+
+async def _get_institutional_score(stock_code: str) -> int:
+    """呼叫 TWSE T86 API，取得外資+投信買賣超合計並計算法人得分"""
+    date_str = date.today().strftime("%Y%m%d")
+    url = "https://www.twse.com.tw/rwd/zh/fund/T86"
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(
+                url,
+                params={"response": "json", "date": date_str, "selectType": "ALL"},
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            data = response.json()
+
+        if data.get("stat") != "OK":
+            print(f"  TWSE T86 回傳狀態非 OK：{data.get('stat')}")
+            return 0
+
+        # fields 欄位順序：[證券代號, 證券名稱, ..., 外資買賣超, 投信買賣超, ...]
+        fields = data.get("fields", [])
+        rows = data.get("data", [])
+
+        try:
+            foreign_idx = fields.index("外陸資買賣超股數(千股)")
+            trust_idx = fields.index("投信買賣超股數(千股)")
+            code_idx = 0
+        except ValueError:
+            # 嘗試備用欄位名稱
+            try:
+                foreign_idx = next(i for i, f in enumerate(fields) if "外" in f and "買賣超" in f)
+                trust_idx = next(i for i, f in enumerate(fields) if "投信" in f and "買賣超" in f)
+                code_idx = 0
+            except StopIteration:
+                print(f"  無法解析 T86 欄位：{fields}")
+                return 0
+
+        for row in rows:
+            if row[code_idx].strip() == stock_code.strip():
+                foreign_net = int(row[foreign_idx].replace(",", "").replace("+", "") or 0)
+                trust_net = int(row[trust_idx].replace(",", "").replace("+", "") or 0)
+                net_total = foreign_net + trust_net
+
+                if net_total > 1000:
+                    return 2
+                elif net_total > 0:
+                    return 1
+                else:
+                    return -2
+
+        print(f"  T86 找不到股票代號 {stock_code}")
+        return 0
+
+    except Exception as e:
+        print(f"  TWSE T86 呼叫失敗，法人得分設為 0：{e}")
+        return 0
 
 
 async def calculate_score(stock_code: str) -> dict:
@@ -14,33 +97,46 @@ async def calculate_score(stock_code: str) -> dict:
     計算指定股票的今日評分（法人 + 均線 + 成交量）
     回傳各參數得分與總分
     """
-    institutional_score = 0
+    # --- 法人得分（TWSE T86） ---
+    institutional_score = await _get_institutional_score(stock_code)
+
+    # --- 均線 & 成交量得分（yfinance，非同步執行緒） ---
     ma_score = 0
     volume_score = 0
+    ticker_symbol = f"{stock_code}.TW"
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            inst_response = await client.get(
-                f"{settings.TWSE_BASE_URL}/MI_INDEX",
-                params={"response": "json", "date": date.today().strftime("%Y%m%d")},
-            )
-            inst_data = inst_response.json()
-            net_buy = inst_data.get("net_buy", 0)
-            if net_buy > 1000:
-                institutional_score = 2
-            elif net_buy > 0:
-                institutional_score = 1
+        loop = get_event_loop()
+        yf_data = await loop.run_in_executor(
+            _thread_pool, _fetch_yfinance_data, ticker_symbol
+        )
+
+        close = yf_data["close"]
+        ma20 = yf_data["ma20"]
+        vol_today = yf_data["vol_today"]
+        vol_avg5 = yf_data["vol_avg5"]
+
+        # 均線得分
+        if close is not None and ma20 is not None and ma20 > 0:
+            if close < ma20 * 0.98:
+                ma_score = 2
+            elif close <= ma20 * 1.05:
+                ma_score = 1
             else:
-                institutional_score = -2
+                ma_score = -1
+
+        # 成交量得分
+        if vol_today is not None and vol_avg5 is not None and vol_avg5 > 0:
+            ratio = vol_today / vol_avg5
+            if ratio > 1.5:
+                volume_score = 2
+            elif ratio >= 0.7:
+                volume_score = 0
+            else:
+                volume_score = -1
+
     except Exception as e:
-        print(f"  TWSE API 呼叫失敗，法人得分設為 0：{e}")
-        institutional_score = 0
-
-    # 均線得分（示意值，實際需呼叫富果行情 API 計算）
-    ma_score = 1
-
-    # 成交量得分（示意值，實際需呼叫富果行情 API 計算）
-    volume_score = 1
+        print(f"  yfinance 呼叫失敗，均線/成交量得分設為 0：{e}")
 
     total_score = institutional_score + ma_score + volume_score
 
