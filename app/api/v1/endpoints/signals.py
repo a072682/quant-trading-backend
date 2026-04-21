@@ -42,6 +42,16 @@ async def get_signal_history(
     return APIResponse(message="取得歷史評分成功", data=records)
 
 
+@router.get("/stats", response_model=APIResponse[dict])
+async def get_stats(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """回傳系統統計資訊：評分總筆數與最後一次執行時間"""
+    stats = await signal_service.get_stats(db)
+    return APIResponse(message="取得統計資訊成功", data=stats)
+
+
 @router.get("/by-date/{date}", response_model=APIResponse[List[SignalOut]])
 async def get_signals_by_date(
     date: str,

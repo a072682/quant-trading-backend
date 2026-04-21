@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 
 from app.models.signal import Signal
 from app.services.ai_service import ai_service
@@ -251,3 +251,19 @@ async def get_signals_by_date(date: str, db: AsyncSession) -> list[Signal]:
         select(Signal).where(Signal.date == date).order_by(Signal.stock_code)
     )
     return result.scalars().all()
+
+
+async def get_stats(db: AsyncSession) -> dict:
+    """查詢評分總筆數與最後一筆的建立時間"""
+    count_result = await db.execute(select(func.count()).select_from(Signal))
+    record_count = count_result.scalar()
+
+    latest_result = await db.execute(
+        select(Signal.created_at).order_by(desc(Signal.created_at)).limit(1)
+    )
+    last_created_at = latest_result.scalar()
+
+    return {
+        "lastRunAt": last_created_at.isoformat() if last_created_at else None,
+        "recordCount": record_count,
+    }
