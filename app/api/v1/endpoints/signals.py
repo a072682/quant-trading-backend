@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List
+from pydantic import BaseModel
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db, get_current_user
@@ -9,6 +10,11 @@ from app.schemas.signal import SignalOut
 
 from app.services import signal_service
 from app.scheduler.jobs import run_daily_signal_job
+
+
+class RunStockBody(BaseModel):
+    stock_code: str
+    stock_name: str
 
 router = APIRouter()
 
@@ -61,6 +67,17 @@ async def get_signals_by_date(
     """取得指定日期（YYYY-MM-DD）所有股票的評分紀錄"""
     records = await signal_service.get_signals_by_date(date, db)
     return APIResponse(message="取得指定日期評分成功", data=records)
+
+
+@router.post("/run-stock", response_model=APIResponse[SignalOut])
+async def run_stock(
+    body: RunStockBody,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """對單一股票立即執行評分計算，適合前端新增股票後呼叫"""
+    signal = await signal_service.create_today_signal(body.stock_code, body.stock_name, db)
+    return APIResponse(message="評分計算完成", data=signal)
 
 
 @router.post("/run-now", response_model=APIResponse[None])
