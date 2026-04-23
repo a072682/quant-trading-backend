@@ -2,6 +2,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.db.session import AsyncSessionLocal
 from app.services.signal_service import create_today_signal
+from app.services.simulation_service import check_and_close_positions
 
 WATCH_LIST = [
     {"code": "0050", "name": "元大台灣50"},
@@ -13,8 +14,7 @@ WATCH_LIST = [
 
 
 async def run_daily_signal_job():
-    """每日排程任務：收盤後自動計算所有監控股票的評分"""
-    print("開始執行每日評分計算任務...")
+    print("開始執行每日訊號任務")
 
     async with AsyncSessionLocal() as db:
         for stock in WATCH_LIST:
@@ -24,15 +24,17 @@ async def run_daily_signal_job():
                     stock_name=stock["name"],
                     db=db,
                 )
-                print(f"  {stock['name']} 評分完成：{signal.total_score} 分")
-            except Exception as e:
-                print(f"  {stock['name']} 評分失敗：{e}")
+                print(f"{stock['code']} 訊號完成，總分: {signal.total_score}")
+            except Exception as exc:
+                print(f"{stock['code']} 訊號任務失敗: {exc}")
 
-    print("每日評分計算任務完成")
+        closed_positions = await check_and_close_positions(db)
+        print(f"本次檢查完成，平倉筆數: {len(closed_positions)}")
+
+    print("每日訊號任務完成")
 
 
 def create_scheduler() -> AsyncIOScheduler:
-    """建立並設定排程器（台灣時間週一至週五 14:00 執行）"""
     scheduler = AsyncIOScheduler(timezone="Asia/Taipei")
 
     scheduler.add_job(
