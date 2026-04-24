@@ -8,6 +8,8 @@ from app.api.deps import get_db, get_current_user
 from app.schemas.common import APIResponse
 from app.schemas.signal import SignalOut
 
+from sqlalchemy import select as sa_select
+from app.models.simulation import SimulationTrade
 from app.services import signal_service
 from app.services.signal_service import create_today_signal
 from app.scheduler.jobs import WATCH_LIST
@@ -138,11 +140,21 @@ async def get_today_all(
 
 @router.get("/top", response_model=APIResponse[List[SignalOut]])
 async def get_top_signals(
-    limit: int = Query(default=5, ge=1, le=50),
+    limit: int = Query(default=3, ge=1, le=50),
     min_score: int = Query(default=6),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """取得今日高分股票，依總分降冪排列"""
-    records = await signal_service.get_top_signals(db, limit=limit, min_score=min_score)
-    return APIResponse(message=f"取得今日 Top{limit} 評分成功", data=records)
+    """取得今日高分股票，排除已有模擬持倉的股票，依總分降冪排列"""
+    open_result = await db.execute(
+        sa_select(SimulationTrade.stock_code).where(
+            SimulationTrade.status == "open",
+            SimulationTrade.action == "buy",
+        )
+    )
+    exclude_codes = [row[0] for row in open_result.all()]
+
+    records = await signal_service.get_top_signals(
+        db, limit=limit, min_score=min_score, exclude_codes=exclude_codes
+    )
+    return APIResponse(message=f"取得今日 Top{limit} 推薦成功", data=records)

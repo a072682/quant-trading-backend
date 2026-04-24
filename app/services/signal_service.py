@@ -331,12 +331,18 @@ async def get_today_all_signals(db: AsyncSession) -> list[Signal]:
 
 
 async def get_top_signals(
-    db: AsyncSession, limit: int = 5, min_score: int = 6
+    db: AsyncSession,
+    limit: int = 3,
+    min_score: int = 6,
+    exclude_codes: list[str] | None = None,
 ) -> list[Signal]:
     today = date.today().strftime("%Y-%m-%d")
+    conditions = [Signal.date == today, Signal.total_score >= min_score]
+    if exclude_codes:
+        conditions.append(Signal.stock_code.notin_(exclude_codes))
     result = await db.execute(
         select(Signal)
-        .where(Signal.date == today, Signal.total_score >= min_score)
+        .where(*conditions)
         .order_by(desc(Signal.total_score))
         .limit(limit)
     )
