@@ -12,6 +12,7 @@ class SignalOut(BaseModel):
     ma_score: int
     volume_score: int
     yield_score: int = 0
+    futures_score: int = 0
     total_score: int
     ai_action: Optional[str] = None
     ai_reason: Optional[str] = None

@@ -22,6 +22,7 @@ class Signal(Base):
     ma_score: Mapped[int] = mapped_column(Integer, default=0)
     volume_score: Mapped[int] = mapped_column(Integer, default=0)
     yield_score: Mapped[int] = mapped_column(Integer, default=0)
+    futures_score: Mapped[int] = mapped_column(Integer, default=0)
     total_score: Mapped[int] = mapped_column(Integer, default=0)
 
     ai_action: Mapped[str] = mapped_column(String(10), nullable=True)

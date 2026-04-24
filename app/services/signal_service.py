@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.signal import Signal
 from app.models.simulation import SimulationTrade
 from app.services.ai_service import ai_service
+from app.services.futures_service import get_futures_data
 from app.services.simulation_service import create_simulation_buy
 
 _thread_pool = ThreadPoolExecutor(max_workers=4)
@@ -110,6 +111,8 @@ async def _get_institutional_score(stock_code: str) -> int:
 
 async def calculate_score(stock_code: str, fallback: dict | None = None) -> dict:
     institutional_score = await _get_institutional_score(stock_code)
+    futures_data = await get_futures_data()
+    futures_score = futures_data["futures_score"]
 
     close = None
     yf_failed = False
@@ -174,7 +177,7 @@ async def calculate_score(stock_code: str, fallback: dict | None = None) -> dict
 
     # yfinance 失敗時保留 fallback 分數（已在初始化時設定）
 
-    total_score = institutional_score + ma_score + volume_score + yield_score
+    total_score = institutional_score + ma_score + volume_score + yield_score + futures_score
 
     return {
         "close": close,
@@ -182,6 +185,7 @@ async def calculate_score(stock_code: str, fallback: dict | None = None) -> dict
         "ma_score": ma_score,
         "volume_score": volume_score,
         "yield_score": yield_score,
+        "futures_score": futures_score,
         "total_score": total_score,
         "yf_failed": yf_failed,
     }
@@ -212,6 +216,7 @@ async def create_today_signal(
             "ma_score": existing.ma_score,
             "volume_score": existing.volume_score,
             "yield_score": existing.yield_score,
+            "futures_score": existing.futures_score,
         }
         if existing
         else None
@@ -234,6 +239,7 @@ async def create_today_signal(
         existing.ma_score = scores["ma_score"]
         existing.volume_score = scores["volume_score"]
         existing.yield_score = scores["yield_score"]
+        existing.futures_score = scores["futures_score"]
         existing.total_score = scores["total_score"]
         existing.ai_action = ai_result.get("action")
         existing.ai_reason = ai_result.get("reason")
@@ -248,6 +254,7 @@ async def create_today_signal(
             ma_score=scores["ma_score"],
             volume_score=scores["volume_score"],
             yield_score=scores["yield_score"],
+            futures_score=scores["futures_score"],
             total_score=scores["total_score"],
             ai_action=ai_result.get("action"),
             ai_reason=ai_result.get("reason"),
