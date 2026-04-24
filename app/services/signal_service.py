@@ -337,6 +337,7 @@ async def get_top_signals(
     exclude_codes: list[str] | None = None,
 ) -> list[Signal]:
     today = date.today().strftime("%Y-%m-%d")
+    print(f"[get_top_signals] 查詢條件：date={today}, min_score={min_score}, exclude={exclude_codes}")
     conditions = [Signal.date == today, Signal.total_score >= min_score]
     if exclude_codes:
         conditions.append(Signal.stock_code.notin_(exclude_codes))
@@ -346,7 +347,9 @@ async def get_top_signals(
         .order_by(desc(Signal.total_score))
         .limit(limit)
     )
-    return result.scalars().all()
+    signals = result.scalars().all()
+    print(f"[get_top_signals] 符合條件的股票數：{len(signals)}")
+    return signals
 
 
 async def get_stats(db: AsyncSession) -> dict:

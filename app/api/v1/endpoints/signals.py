@@ -153,6 +153,8 @@ async def get_top_signals(
         )
     )
     exclude_codes = [row[0] for row in open_result.all()]
+    print(f"[top] exclude_codes: {exclude_codes}")
+    print(f"[top] min_score: {min_score}, limit: {limit}")
 
     records = await signal_service.get_top_signals(
         db, limit=limit, min_score=min_score, exclude_codes=exclude_codes
