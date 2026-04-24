@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,12 +9,23 @@ from app.schemas.common import APIResponse
 from app.schemas.signal import SignalOut
 
 from app.services import signal_service
-from app.scheduler.jobs import run_daily_signal_job
+from app.services.signal_service import create_today_signal
+from app.scheduler.jobs import WATCH_LIST
 
 
 class RunStockBody(BaseModel):
     stock_code: str
     stock_name: str
+
+
+class StockItem(BaseModel):
+    code: str
+    name: str
+
+
+class RunNowBody(BaseModel):
+    stocks: Optional[List[StockItem]] = None
+
 
 router = APIRouter()
 
@@ -80,11 +91,39 @@ async def run_stock(
     return APIResponse(message="評分計算完成", data=signal)
 
 
-@router.post("/run-now", response_model=APIResponse[None])
-async def run_signal_now(_=Depends(get_current_user)):
-    """手動觸發今日所有監控股票的評分計算"""
-    await run_daily_signal_job()
-    return APIResponse(message="評分計算執行完成", data=None)
+@router.post("/run-now", response_model=APIResponse[List[SignalOut]])
+async def run_signal_now(
+    body: RunNowBody = RunNowBody(),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """手動觸發評分計算（含 AI 分析）。
+    傳入 stocks 則只計算指定清單；不傳則使用預設 WATCH_LIST 5 檔。
+    完整股票池掃描請等待每日 14:00 排程自動執行。
+    """
+    targets = (
+        [{"code": s.code, "name": s.name} for s in body.stocks]
+        if body.stocks
+        else WATCH_LIST
+    )
+
+    results = []
+    for stock in targets:
+        try:
+            signal = await create_today_signal(
+                stock_code=stock["code"],
+                stock_name=stock["name"],
+                db=db,
+                skip_ai=False,
+            )
+            results.append(signal)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"{stock['code']} 評分失敗: {exc}",
+            )
+
+    return APIResponse(message=f"評分計算完成，共 {len(results)} 檔", data=results)
 
 
 @router.get("/today-all", response_model=APIResponse[List[SignalOut]])
