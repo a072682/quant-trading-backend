@@ -73,8 +73,10 @@ def _passes_filter(info: dict | None) -> bool:
 
 async def filter_stock_pool() -> list[dict]:
     """從 TWSE 取得上市股票清單，批次驗證殖利率與市值，回傳通過篩選的股票"""
+    print("[stock_filter] 開始篩選...")
     try:
         stocks = await _fetch_twse_stock_list()
+        print(f"[stock_filter] TWSE 取得 {len(stocks)} 檔股票")
     except Exception as e:
         print(f"[stock_filter] 抓取 TWSE 清單失敗: {e}")
         return []
@@ -116,6 +118,7 @@ async def filter_stock_pool() -> list[dict]:
 
 async def save_stock_pool(stocks: list[dict], db: AsyncSession) -> None:
     """清空舊股票池並寫入新結果"""
+    print(f"[save_stock_pool] 刪除舊資料中...")
     await db.execute(delete(StockPool))
     now = datetime.now(timezone.utc)
     for s in stocks:
@@ -128,4 +131,6 @@ async def save_stock_pool(stocks: list[dict], db: AsyncSession) -> None:
                 updated_at=now,
             )
         )
+    print(f"[save_stock_pool] 準備 commit {len(stocks)} 筆資料...")
     await db.commit()
+    print(f"[save_stock_pool] commit 完成 ✓")

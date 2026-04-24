@@ -19,6 +19,9 @@ from app.services.stock_filter_service import filter_stock_pool, save_stock_pool
 
 router = APIRouter()
 
+# 持有背景任務的強參考，防止被 GC 提早回收
+_background_tasks: set[asyncio.Task] = set()
+
 
 # ── K 線 ─────────────────────────────────────────────────────────────────────
 
@@ -86,32 +89,57 @@ async def get_filter_status(
 
 # ── 背景篩選任務 ───────────────────────────────────────────────────────────────
 
+async def _update_filter_status(
+    status_id: str,
+    *,
+    status: str,
+    stock_count: int | None = None,
+    error_message: str | None = None,
+) -> None:
+    """以獨立 session 更新 FilterStatus，確保不受其他 session 狀態影響"""
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(FilterStatus).where(FilterStatus.id == status_id)
+        )
+        fs = result.scalars().first()
+        if fs:
+            fs.status = status
+            fs.completed_at = datetime.now(timezone.utc)
+            if stock_count is not None:
+                fs.stock_count = stock_count
+            if error_message is not None:
+                fs.error_message = error_message[:500]
+        await db.commit()
+        print(f"[filter_status] status_id={status_id} 已更新為 {status}，stock_count={stock_count}")
+
+
 async def _run_filter_background(status_id: str) -> None:
-    """背景執行篩選，完成後以獨立 session 更新狀態"""
+    """背景執行篩選：各步驟使用獨立 session，避免 session 狀態交叉污染"""
+    print(f"[filter_bg] 開始篩選... status_id={status_id}")
     try:
+        # Step 1: 執行篩選
         stocks = await filter_stock_pool()
+        print(f"[filter_bg] TWSE 取得 {len(stocks)} 檔股票（通過篩選條件）")
+
+        # Step 2: 存入 stock_pool（獨立 session）
         async with AsyncSessionLocal() as db:
+            print(f"[filter_bg] 開始寫入 stock_pool 資料表，共 {len(stocks)} 筆...")
             await save_stock_pool(stocks, db)
-            result = await db.execute(
-                select(FilterStatus).where(FilterStatus.id == status_id)
-            )
-            fs = result.scalars().first()
-            if fs:
-                fs.status = "completed"
-                fs.completed_at = datetime.now(timezone.utc)
-                fs.stock_count = len(stocks)
-            await db.commit()
+            print(f"[filter_bg] 篩選完成，共 {len(stocks)} 檔存入資料庫 ✓")
+
+        # Step 3: 更新 FilterStatus（再另一個獨立 session）
+        await _update_filter_status(
+            status_id, status="completed", stock_count=len(stocks)
+        )
+
     except Exception as exc:
-        async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                select(FilterStatus).where(FilterStatus.id == status_id)
+        print(f"[filter_bg] 篩選任務失敗: {exc}")
+        try:
+            await _update_filter_status(
+                status_id, status="failed", error_message=str(exc)
             )
-            fs = result.scalars().first()
-            if fs:
-                fs.status = "failed"
-                fs.completed_at = datetime.now(timezone.utc)
-                fs.error_message = str(exc)[:500]
-            await db.commit()
+        except Exception as inner:
+            print(f"[filter_bg] 更新 failed 狀態也失敗: {inner}")
 
 
 @router.post("/filter", response_model=APIResponse)
@@ -132,6 +160,9 @@ async def run_stock_filter(
     await db.commit()
     await db.refresh(fs)
 
-    asyncio.create_task(_run_filter_background(fs.id))
+    task = asyncio.create_task(_run_filter_background(fs.id))
+    # 持有強參考防止 GC，任務完成後自動移除
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
     return APIResponse(message="篩選已開始，請透過 GET /stocks/status 輪詢進度")
