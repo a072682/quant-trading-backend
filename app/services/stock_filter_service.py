@@ -13,10 +13,26 @@ _thread_pool = ThreadPoolExecutor(max_workers=4)
 
 TWSE_STOCK_LIST_URL = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
 BATCH_SIZE = 50
-MIN_YIELD_DECIMAL = 0.04   # 4%
+MIN_YIELD_PCT = 4.0        # 4%（統一以百分比為單位比較）
 MIN_MARKET_CAP = 5_000_000_000  # 50億（yfinance 台股市值單位為 TWD）
 EXCLUDED_SECTORS = {"Healthcare"}
 EXCLUDED_INDUSTRY_KEYWORDS = ["semiconductor"]
+
+
+def _normalize_yield_pct(raw: float | None) -> float | None:
+    """將 yfinance dividendYield 統一換算為百分比（%）。
+    yfinance 對台股回傳格式不一致：
+      0.0407 → 小數，需 × 100 → 4.07%
+      4.07   → 已是百分比，直接使用
+      407.0  → 百分比 × 100，需 ÷ 100 → 4.07%
+    """
+    if raw is None:
+        return None
+    if raw > 100:
+        return round(raw / 100, 4)
+    if raw > 1:
+        return round(raw, 4)
+    return round(raw * 100, 4)
 
 
 async def _fetch_twse_stock_list() -> list[dict]:
@@ -55,12 +71,12 @@ def _fetch_yf_info_batch(symbols: list[str]) -> dict[str, dict | None]:
 def _passes_filter(info: dict | None) -> bool:
     if info is None:
         return False
-    dy = info.get("dividend_yield")
+    dy_pct = _normalize_yield_pct(info.get("dividend_yield"))
     mc = info.get("market_cap")
     sector = info.get("sector", "")
     industry = info.get("industry", "")
 
-    if dy is None or dy < MIN_YIELD_DECIMAL:
+    if dy_pct is None or dy_pct < MIN_YIELD_PCT:
         return False
     if mc is None or mc < MIN_MARKET_CAP:
         return False
@@ -100,11 +116,12 @@ async def filter_stock_pool() -> list[dict]:
             symbol = f"{stock['code']}.TW"
             info = info_map.get(symbol)
             if _passes_filter(info):
+                yield_pct = _normalize_yield_pct(info["dividend_yield"]) or 0.0
                 passed.append(
                     {
                         "code": stock["code"],
                         "name": stock["name"],
-                        "yield_pct": round((info["dividend_yield"] or 0) * 100, 2),
+                        "yield_pct": round(yield_pct, 2),
                         "market_cap": round((info["market_cap"] or 0) / 1e8, 2),
                     }
                 )
