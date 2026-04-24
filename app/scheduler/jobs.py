@@ -3,6 +3,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.db.session import AsyncSessionLocal
 from app.services.signal_service import create_today_signal
 from app.services.simulation_service import check_and_close_positions
+from app.services.stock_filter_service import filter_stock_pool, save_stock_pool
 
 WATCH_LIST = [
     {"code": "0050", "name": "元大台灣50"},
@@ -34,6 +35,17 @@ async def run_daily_signal_job():
     print("每日訊號任務完成")
 
 
+async def run_weekly_stock_filter_job():
+    print("開始執行每週股票池篩選任務")
+    try:
+        stocks = await filter_stock_pool()
+        async with AsyncSessionLocal() as db:
+            await save_stock_pool(stocks, db)
+        print(f"股票池篩選完成，共 {len(stocks)} 檔入池")
+    except Exception as exc:
+        print(f"股票池篩選任務失敗: {exc}")
+
+
 def create_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Asia/Taipei")
 
@@ -44,6 +56,15 @@ def create_scheduler() -> AsyncIOScheduler:
         hour=14,
         minute=0,
         id="daily_signal",
+    )
+
+    scheduler.add_job(
+        run_weekly_stock_filter_job,
+        trigger="cron",
+        day_of_week="mon",
+        hour=8,
+        minute=0,
+        id="weekly_stock_filter",
     )
 
     return scheduler

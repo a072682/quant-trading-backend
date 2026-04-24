@@ -4,10 +4,15 @@ from asyncio import get_event_loop
 
 import yfinance as yf
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_db
 from app.schemas.common import APIResponse
 from app.schemas.stock import KLineItem
+from app.schemas.stock_pool import StockPoolItem
 from app.services.signal_service import _thread_pool
+from app.services.stock_filter_service import filter_stock_pool, save_stock_pool
+from app.models.stock_pool import StockPool
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -42,3 +47,27 @@ async def get_kline(
     loop = get_event_loop()
     data = await loop.run_in_executor(_thread_pool, _fetch_kline, ticker_symbol)
     return APIResponse(message="取得K線數據成功", data=data)
+
+
+@router.get("/pool", response_model=APIResponse[List[StockPoolItem]])
+async def get_stock_pool(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """取得目前股票池清單"""
+    result = await db.execute(select(StockPool).order_by(StockPool.stock_code))
+    stocks = result.scalars().all()
+    return APIResponse(message="取得股票池成功", data=stocks)
+
+
+@router.post("/filter", response_model=APIResponse[List[StockPoolItem]])
+async def run_stock_filter(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """立即執行股票篩選並更新股票池（約需數分鐘）"""
+    stocks = await filter_stock_pool()
+    await save_stock_pool(stocks, db)
+    result = await db.execute(select(StockPool).order_by(StockPool.stock_code))
+    saved = result.scalars().all()
+    return APIResponse(message=f"篩選完成，共 {len(saved)} 檔股票入池", data=saved)
