@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from typing import List
 from pydantic import BaseModel
 
@@ -85,3 +85,25 @@ async def run_signal_now(_=Depends(get_current_user)):
     """手動觸發今日所有監控股票的評分計算"""
     await run_daily_signal_job()
     return APIResponse(message="評分計算執行完成", data=None)
+
+
+@router.get("/today-all", response_model=APIResponse[List[SignalOut]])
+async def get_today_all(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """取得今日所有股票評分，依總分降冪排列"""
+    records = await signal_service.get_today_all_signals(db)
+    return APIResponse(message="取得今日所有評分成功", data=records)
+
+
+@router.get("/top", response_model=APIResponse[List[SignalOut]])
+async def get_top_signals(
+    limit: int = Query(default=5, ge=1, le=50),
+    min_score: int = Query(default=6),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """取得今日高分股票，依總分降冪排列"""
+    records = await signal_service.get_top_signals(db, limit=limit, min_score=min_score)
+    return APIResponse(message=f"取得今日 Top{limit} 評分成功", data=records)

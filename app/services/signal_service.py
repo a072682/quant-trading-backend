@@ -314,6 +314,29 @@ async def get_signals_by_date(query_date: str, db: AsyncSession) -> list[Signal]
     return result.scalars().all()
 
 
+async def get_today_all_signals(db: AsyncSession) -> list[Signal]:
+    today = date.today().strftime("%Y-%m-%d")
+    result = await db.execute(
+        select(Signal)
+        .where(Signal.date == today)
+        .order_by(desc(Signal.total_score))
+    )
+    return result.scalars().all()
+
+
+async def get_top_signals(
+    db: AsyncSession, limit: int = 5, min_score: int = 6
+) -> list[Signal]:
+    today = date.today().strftime("%Y-%m-%d")
+    result = await db.execute(
+        select(Signal)
+        .where(Signal.date == today, Signal.total_score >= min_score)
+        .order_by(desc(Signal.total_score))
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+
 async def get_stats(db: AsyncSession) -> dict:
     count_result = await db.execute(select(func.count()).select_from(Signal))
     record_count = count_result.scalar()

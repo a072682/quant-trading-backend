@@ -1,6 +1,8 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from sqlalchemy import select
 
 from app.db.session import AsyncSessionLocal
+from app.models.stock_pool import StockPool
 from app.services.signal_service import create_today_signal
 from app.services.simulation_service import check_and_close_positions
 from app.services.stock_filter_service import filter_stock_pool, save_stock_pool
@@ -14,25 +16,41 @@ WATCH_LIST = [
 ]
 
 
+async def _get_scan_targets(db) -> list[dict]:
+    """從 stock_pool 讀取掃描清單，若為空則退回 WATCH_LIST"""
+    result = await db.execute(select(StockPool))
+    pool = result.scalars().all()
+    if pool:
+        return [{"code": s.stock_code, "name": s.stock_name} for s in pool]
+    print("stock_pool 為空，退回使用預設 WATCH_LIST")
+    return WATCH_LIST
+
+
 async def run_daily_signal_job():
     print("開始執行每日訊號任務")
 
     async with AsyncSessionLocal() as db:
-        for stock in WATCH_LIST:
+        targets = await _get_scan_targets(db)
+        print(f"本次掃描股票數：{len(targets)} 檔")
+
+        success, failed = 0, 0
+        for stock in targets:
             try:
                 signal = await create_today_signal(
                     stock_code=stock["code"],
                     stock_name=stock["name"],
                     db=db,
                 )
-                print(f"{stock['code']} 訊號完成，總分: {signal.total_score}")
+                print(f"[signal] {stock['code']} 完成，總分: {signal.total_score}")
+                success += 1
             except Exception as exc:
-                print(f"{stock['code']} 訊號任務失敗: {exc}")
+                print(f"[signal] {stock['code']} 失敗: {exc}")
+                failed += 1
 
         closed_positions = await check_and_close_positions(db)
-        print(f"本次檢查完成，平倉筆數: {len(closed_positions)}")
+        print(f"平倉筆數: {len(closed_positions)}")
 
-    print("每日訊號任務完成")
+    print(f"每日訊號任務完成：成功 {success} 檔，失敗 {failed} 檔，共掃描 {len(targets)} 檔")
 
 
 async def run_weekly_stock_filter_job():
