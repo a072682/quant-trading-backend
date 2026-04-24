@@ -1,40 +1,43 @@
-from fastapi import APIRouter, Depends
-from typing import List
+import asyncio
 from asyncio import get_event_loop
+from datetime import datetime, timezone
+from typing import List
 
 import yfinance as yf
-
-from app.api.deps import get_current_user, get_db
-from app.schemas.common import APIResponse
-from app.schemas.stock import KLineItem
-from app.schemas.stock_pool import StockPoolItem
-from app.services.signal_service import _thread_pool
-from app.services.stock_filter_service import filter_stock_pool, save_stock_pool
-from app.models.stock_pool import StockPool
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_current_user, get_db
+from app.db.session import AsyncSessionLocal
+from app.models.stock_pool import FilterStatus, StockPool
+from app.schemas.common import APIResponse
+from app.schemas.stock import KLineItem
+from app.schemas.stock_pool import FilterStatusOut, StockPoolItem
+from app.services.signal_service import _thread_pool
+from app.services.stock_filter_service import filter_stock_pool, save_stock_pool
 
 router = APIRouter()
 
 
+# ── K 線 ─────────────────────────────────────────────────────────────────────
+
 def _fetch_kline(ticker_symbol: str) -> list:
     ticker = yf.Ticker(ticker_symbol)
     hist = ticker.history(period="3mo")
-
     if hist.empty:
         return []
-
-    result = []
-    for dt, row in hist.iterrows():
-        result.append({
+    return [
+        {
             "time": dt.strftime("%Y-%m-%d"),
             "open": round(float(row["Open"]), 2),
             "high": round(float(row["High"]), 2),
             "low": round(float(row["Low"]), 2),
             "close": round(float(row["Close"]), 2),
             "volume": int(row["Volume"]),
-        })
-    return result
+        }
+        for dt, row in hist.iterrows()
+    ]
 
 
 @router.get("/kline/{stock_code}", response_model=APIResponse[List[KLineItem]])
@@ -43,11 +46,12 @@ async def get_kline(
     _=Depends(get_current_user),
 ):
     """取得指定股票最近 3 個月的日K線數據"""
-    ticker_symbol = f"{stock_code}.TW"
     loop = get_event_loop()
-    data = await loop.run_in_executor(_thread_pool, _fetch_kline, ticker_symbol)
+    data = await loop.run_in_executor(_thread_pool, _fetch_kline, f"{stock_code}.TW")
     return APIResponse(message="取得K線數據成功", data=data)
 
+
+# ── 股票池 ────────────────────────────────────────────────────────────────────
 
 @router.get("/pool", response_model=APIResponse[List[StockPoolItem]])
 async def get_stock_pool(
@@ -56,18 +60,78 @@ async def get_stock_pool(
 ):
     """取得目前股票池清單"""
     result = await db.execute(select(StockPool).order_by(StockPool.stock_code))
-    stocks = result.scalars().all()
-    return APIResponse(message="取得股票池成功", data=stocks)
+    return APIResponse(message="取得股票池成功", data=result.scalars().all())
 
 
-@router.post("/filter", response_model=APIResponse[List[StockPoolItem]])
+# ── 篩選狀態 ──────────────────────────────────────────────────────────────────
+
+async def _get_latest_status(db: AsyncSession) -> FilterStatus | None:
+    result = await db.execute(
+        select(FilterStatus).order_by(FilterStatus.started_at.desc()).limit(1)
+    )
+    return result.scalars().first()
+
+
+@router.get("/status", response_model=APIResponse[FilterStatusOut])
+async def get_filter_status(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """取得最新一次篩選任務的狀態（前端用此輪詢）"""
+    status = await _get_latest_status(db)
+    if status is None:
+        return APIResponse(message="尚無篩選紀錄", data=None)
+    return APIResponse(message="取得狀態成功", data=status)
+
+
+# ── 背景篩選任務 ───────────────────────────────────────────────────────────────
+
+async def _run_filter_background(status_id: str) -> None:
+    """背景執行篩選，完成後以獨立 session 更新狀態"""
+    try:
+        stocks = await filter_stock_pool()
+        async with AsyncSessionLocal() as db:
+            await save_stock_pool(stocks, db)
+            result = await db.execute(
+                select(FilterStatus).where(FilterStatus.id == status_id)
+            )
+            fs = result.scalars().first()
+            if fs:
+                fs.status = "completed"
+                fs.completed_at = datetime.now(timezone.utc)
+                fs.stock_count = len(stocks)
+            await db.commit()
+    except Exception as exc:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(FilterStatus).where(FilterStatus.id == status_id)
+            )
+            fs = result.scalars().first()
+            if fs:
+                fs.status = "failed"
+                fs.completed_at = datetime.now(timezone.utc)
+                fs.error_message = str(exc)[:500]
+            await db.commit()
+
+
+@router.post("/filter", response_model=APIResponse)
 async def run_stock_filter(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """立即執行股票篩選並更新股票池（約需數分鐘）"""
-    stocks = await filter_stock_pool()
-    await save_stock_pool(stocks, db)
-    result = await db.execute(select(StockPool).order_by(StockPool.stock_code))
-    saved = result.scalars().all()
-    return APIResponse(message=f"篩選完成，共 {len(saved)} 檔股票入池", data=saved)
+    """啟動背景股票篩選任務（若已有任務進行中則拒絕）"""
+    latest = await _get_latest_status(db)
+    if latest and latest.status == "running":
+        raise HTTPException(status_code=400, detail="已有篩選任務進行中，請稍後再試")
+
+    fs = FilterStatus(
+        status="running",
+        started_at=datetime.now(timezone.utc),
+    )
+    db.add(fs)
+    await db.commit()
+    await db.refresh(fs)
+
+    asyncio.create_task(_run_filter_background(fs.id))
+
+    return APIResponse(message="篩選已開始，請透過 GET /stocks/status 輪詢進度")

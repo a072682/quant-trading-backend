@@ -1,14 +1,34 @@
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select
 
 from app.core.config import settings
 from app.api.v1.router import router as v1_router
 from app.api.v1.endpoints.ws import router as ws_router
-from app.db.session import engine
+from app.db.session import engine, AsyncSessionLocal
 from app.db.base import Base
 from app.scheduler.jobs import create_scheduler
+
+
+async def _recover_stale_filter_status() -> None:
+    """將上次重啟前未完成的 running 狀態改為 failed"""
+    from app.models.stock_pool import FilterStatus  # 避免循環 import
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(FilterStatus).where(FilterStatus.status == "running")
+        )
+        stale = result.scalars().all()
+        for fs in stale:
+            fs.status = "failed"
+            fs.completed_at = datetime.now(timezone.utc)
+            fs.error_message = "伺服器重啟，任務中斷"
+        if stale:
+            await db.commit()
+            print(f"⚠️  已將 {len(stale)} 筆殘留 running 狀態修正為 failed")
 
 
 @asynccontextmanager
@@ -18,6 +38,8 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     print("✅ 資料表初始化完成")
+
+    await _recover_stale_filter_status()
 
     scheduler = create_scheduler()
     scheduler.start()
