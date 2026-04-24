@@ -1,6 +1,6 @@
 from asyncio import get_event_loop
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 
 import httpx
 import yfinance as yf
@@ -108,13 +108,19 @@ async def _get_institutional_score(stock_code: str) -> int:
         return 0
 
 
-async def calculate_score(stock_code: str) -> dict:
+async def calculate_score(stock_code: str, fallback: dict | None = None) -> dict:
     institutional_score = await _get_institutional_score(stock_code)
 
     close = None
-    ma_score = 0
-    volume_score = 0
-    yield_score = 0
+    yf_failed = False
+
+    fb_ma = fallback["ma_score"] if fallback else 0
+    fb_vol = fallback["volume_score"] if fallback else 0
+    fb_yield = fallback["yield_score"] if fallback else 0
+
+    ma_score = fb_ma
+    volume_score = fb_vol
+    yield_score = fb_yield
 
     try:
         loop = get_event_loop()
@@ -122,39 +128,51 @@ async def calculate_score(stock_code: str) -> dict:
             _thread_pool, _fetch_yfinance_data, f"{stock_code}.TW"
         )
 
-        close = yf_data["close"]
-        ma20 = yf_data["ma20"]
-        vol_today = yf_data["vol_today"]
-        vol_avg5 = yf_data["vol_avg5"]
-        dividend_yield = yf_data["dividend_yield"]
+        if yf_data["close"] is None:
+            yf_failed = True
+        else:
+            close = yf_data["close"]
+            ma20 = yf_data["ma20"]
+            vol_today = yf_data["vol_today"]
+            vol_avg5 = yf_data["vol_avg5"]
+            dividend_yield = yf_data["dividend_yield"]
 
-        if close is not None and ma20 is not None and ma20 > 0:
-            if close < ma20 * 0.98:
-                ma_score = 2
-            elif close <= ma20 * 1.05:
-                ma_score = 1
-            else:
-                ma_score = -1
+            if close is not None and ma20 is not None and ma20 > 0:
+                if close < ma20 * 0.98:
+                    ma_score = 2
+                elif close <= ma20 * 1.05:
+                    ma_score = 1
+                else:
+                    ma_score = -1
+            elif fallback is None:
+                ma_score = 0
 
-        if vol_today is not None and vol_avg5 is not None and vol_avg5 > 0:
-            ratio = vol_today / vol_avg5
-            if ratio > 1.5:
-                volume_score = 2
-            elif ratio >= 0.7:
+            if vol_today is not None and vol_avg5 is not None and vol_avg5 > 0:
+                ratio = vol_today / vol_avg5
+                if ratio > 1.5:
+                    volume_score = 2
+                elif ratio >= 0.7:
+                    volume_score = 0
+                else:
+                    volume_score = -1
+            elif fallback is None:
                 volume_score = 0
-            else:
-                volume_score = -1
 
-        if dividend_yield is not None:
-            dividend_percent = float(dividend_yield) * 100
-            if dividend_percent >= 6.5:
-                yield_score = 2
-            elif dividend_percent >= 5.0:
-                yield_score = 1
-            else:
-                yield_score = -1
+            if dividend_yield is not None:
+                dividend_percent = float(dividend_yield) * 100
+                if dividend_percent >= 6.5:
+                    yield_score = 2
+                elif dividend_percent >= 5.0:
+                    yield_score = 1
+                else:
+                    yield_score = -1
+            elif fallback is None:
+                yield_score = 0
+
     except Exception:
-        pass
+        yf_failed = True
+
+    # yfinance 失敗時保留 fallback 分數（已在初始化時設定）
 
     total_score = institutional_score + ma_score + volume_score + yield_score
 
@@ -165,6 +183,7 @@ async def calculate_score(stock_code: str) -> dict:
         "volume_score": volume_score,
         "yield_score": yield_score,
         "total_score": total_score,
+        "yf_failed": yf_failed,
     }
 
 
@@ -172,7 +191,33 @@ async def create_today_signal(
     stock_code: str, stock_name: str, db: AsyncSession
 ) -> Signal:
     today = date.today().strftime("%Y-%m-%d")
-    scores = await calculate_score(stock_code)
+
+    result = await db.execute(
+        select(Signal).where(
+            Signal.stock_code == stock_code,
+            Signal.date == today,
+        )
+    )
+    existing = result.scalars().first()
+
+    if existing and existing.updated_at is not None:
+        updated_at_utc = existing.updated_at
+        if updated_at_utc.tzinfo is None:
+            updated_at_utc = updated_at_utc.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - updated_at_utc < timedelta(hours=1):
+            return existing
+
+    fallback = (
+        {
+            "ma_score": existing.ma_score,
+            "volume_score": existing.volume_score,
+            "yield_score": existing.yield_score,
+        }
+        if existing
+        else None
+    )
+
+    scores = await calculate_score(stock_code, fallback=fallback)
 
     ai_result = await ai_service.analyze_signal(
         {
@@ -182,22 +227,18 @@ async def create_today_signal(
         }
     )
 
-    result = await db.execute(
-        select(Signal).where(
-            Signal.stock_code == stock_code,
-            Signal.date == today,
-        )
-    )
-    signal = result.scalars().first()
+    now = datetime.now(timezone.utc)
 
-    if signal:
-        signal.institutional_score = scores["institutional_score"]
-        signal.ma_score = scores["ma_score"]
-        signal.volume_score = scores["volume_score"]
-        signal.yield_score = scores["yield_score"]
-        signal.total_score = scores["total_score"]
-        signal.ai_action = ai_result.get("action")
-        signal.ai_reason = ai_result.get("reason")
+    if existing:
+        existing.institutional_score = scores["institutional_score"]
+        existing.ma_score = scores["ma_score"]
+        existing.volume_score = scores["volume_score"]
+        existing.yield_score = scores["yield_score"]
+        existing.total_score = scores["total_score"]
+        existing.ai_action = ai_result.get("action")
+        existing.ai_reason = ai_result.get("reason")
+        existing.updated_at = now
+        signal = existing
     else:
         signal = Signal(
             date=today,
@@ -210,6 +251,7 @@ async def create_today_signal(
             total_score=scores["total_score"],
             ai_action=ai_result.get("action"),
             ai_reason=ai_result.get("reason"),
+            updated_at=now,
         )
         db.add(signal)
 
