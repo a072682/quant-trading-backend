@@ -192,7 +192,7 @@ async def calculate_score(stock_code: str, fallback: dict | None = None) -> dict
 
 
 async def create_today_signal(
-    stock_code: str, stock_name: str, db: AsyncSession
+    stock_code: str, stock_name: str, db: AsyncSession, skip_ai: bool = False
 ) -> Signal:
     today = date.today().strftime("%Y-%m-%d")
 
@@ -224,13 +224,19 @@ async def create_today_signal(
 
     scores = await calculate_score(stock_code, fallback=fallback)
 
-    ai_result = await ai_service.analyze_signal(
-        {
-            "stock_code": stock_code,
-            "stock_name": stock_name,
-            **scores,
-        }
-    )
+    if skip_ai:
+        ai_action = None
+        ai_reason = None
+    else:
+        ai_result = await ai_service.analyze_signal(
+            {
+                "stock_code": stock_code,
+                "stock_name": stock_name,
+                **scores,
+            }
+        )
+        ai_action = ai_result.get("action")
+        ai_reason = ai_result.get("reason")
 
     now = datetime.now(timezone.utc)
 
@@ -241,8 +247,8 @@ async def create_today_signal(
         existing.yield_score = scores["yield_score"]
         existing.futures_score = scores["futures_score"]
         existing.total_score = scores["total_score"]
-        existing.ai_action = ai_result.get("action")
-        existing.ai_reason = ai_result.get("reason")
+        existing.ai_action = ai_action
+        existing.ai_reason = ai_reason
         existing.updated_at = now
         signal = existing
     else:
@@ -256,8 +262,8 @@ async def create_today_signal(
             yield_score=scores["yield_score"],
             futures_score=scores["futures_score"],
             total_score=scores["total_score"],
-            ai_action=ai_result.get("action"),
-            ai_reason=ai_result.get("reason"),
+            ai_action=ai_action,
+            ai_reason=ai_reason,
             updated_at=now,
         )
         db.add(signal)

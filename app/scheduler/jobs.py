@@ -1,8 +1,12 @@
+from datetime import date
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy import select
+from sqlalchemy import desc, select
 
 from app.db.session import AsyncSessionLocal
+from app.models.signal import Signal
 from app.models.stock_pool import StockPool
+from app.services.ai_service import ai_service
 from app.services.signal_service import create_today_signal
 from app.services.simulation_service import check_and_close_positions
 from app.services.stock_filter_service import filter_stock_pool, save_stock_pool
@@ -26,6 +30,42 @@ async def _get_scan_targets(db) -> list[dict]:
     return WATCH_LIST
 
 
+async def _apply_ai_to_top_signals(db, top_n: int = 5) -> None:
+    """對今日分數最高的前 N 名執行 AI 分析並更新資料庫"""
+    today = date.today().strftime("%Y-%m-%d")
+    result = await db.execute(
+        select(Signal)
+        .where(Signal.date == today)
+        .order_by(desc(Signal.total_score))
+        .limit(top_n)
+    )
+    top_signals = result.scalars().all()
+    print(f"[AI] 開始對前 {len(top_signals)} 名進行 AI 分析")
+
+    for signal in top_signals:
+        try:
+            ai_result = await ai_service.analyze_signal(
+                {
+                    "stock_code": signal.stock_code,
+                    "stock_name": signal.stock_name,
+                    "institutional_score": signal.institutional_score,
+                    "ma_score": signal.ma_score,
+                    "volume_score": signal.volume_score,
+                    "yield_score": signal.yield_score,
+                    "futures_score": signal.futures_score,
+                    "total_score": signal.total_score,
+                }
+            )
+            signal.ai_action = ai_result.get("action")
+            signal.ai_reason = ai_result.get("reason")
+            print(f"[AI] {signal.stock_code}（{signal.total_score}分）→ {signal.ai_action}")
+        except Exception as exc:
+            print(f"[AI] {signal.stock_code} AI 分析失敗: {exc}")
+
+    await db.commit()
+    print("[AI] AI 分析全部完成")
+
+
 async def run_daily_signal_job():
     print("開始執行每日訊號任務")
 
@@ -33,6 +73,7 @@ async def run_daily_signal_job():
         targets = await _get_scan_targets(db)
         print(f"本次掃描股票數：{len(targets)} 檔")
 
+        # 階段一：對所有股票做純數字評分，跳過 AI
         success, failed = 0, 0
         for stock in targets:
             try:
@@ -40,6 +81,7 @@ async def run_daily_signal_job():
                     stock_code=stock["code"],
                     stock_name=stock["name"],
                     db=db,
+                    skip_ai=True,
                 )
                 print(f"[signal] {stock['code']} 完成，總分: {signal.total_score}")
                 success += 1
@@ -47,10 +89,15 @@ async def run_daily_signal_job():
                 print(f"[signal] {stock['code']} 失敗: {exc}")
                 failed += 1
 
+        print(f"階段一完成：成功 {success} 檔，失敗 {failed} 檔")
+
+        # 階段二：只對今日前 5 名執行 AI 分析
+        await _apply_ai_to_top_signals(db, top_n=5)
+
         closed_positions = await check_and_close_positions(db)
         print(f"平倉筆數: {len(closed_positions)}")
 
-    print(f"每日訊號任務完成：成功 {success} 檔，失敗 {failed} 檔，共掃描 {len(targets)} 檔")
+    print(f"每日訊號任務完成：共掃描 {len(targets)} 檔，AI 分析僅執行 5 次")
 
 
 async def run_weekly_stock_filter_job():
