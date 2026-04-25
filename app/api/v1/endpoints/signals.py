@@ -147,7 +147,7 @@ async def get_top_signals(
 ):
     """取得今日高分股票，排除已有模擬持倉的股票，依總分降冪排列"""
     open_result = await db.execute(
-        sa_select(SimulationTrade.stock_code).where(
+        sa_select(SimulationTrade.stock_code).distinct().where(
             SimulationTrade.status == "open",
             SimulationTrade.action == "buy",
         )
