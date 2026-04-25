@@ -7,12 +7,10 @@ import yfinance as yf
 _thread_pool = ThreadPoolExecutor(max_workers=2)
 logger = logging.getLogger(__name__)
 
-FUTURES_TICKER = "TWN=F"
 SPOT_TICKER = "^TWII"
 
 
 def _fetch_hist_valid(ticker_symbol: str) -> "pd.DataFrame | None":
-    """取得歷史資料並確認 Close 欄位有有效數值，否則回傳 None。"""
     import pandas as pd
     ticker = yf.Ticker(ticker_symbol)
     hist = ticker.history(period="2d")
@@ -27,7 +25,6 @@ def _fetch_hist_valid(ticker_symbol: str) -> "pd.DataFrame | None":
 
 
 def _calc_change_and_volume(hist) -> tuple[float, float]:
-    """計算漲跌幅與成交量變化率。"""
     close = hist["Close"]
     today_price = float(close.iloc[-1])
     prev_price = float(close.iloc[-2]) if len(close) >= 2 else today_price
@@ -45,30 +42,9 @@ def _calc_change_and_volume(hist) -> tuple[float, float]:
 
 
 def _fetch_futures_raw() -> dict:
-    # 先嘗試 TWN=F（CME 台灣期貨）
-    f_hist = _fetch_hist_valid(FUTURES_TICKER)
-
-    if f_hist is not None:
-        change_pct, vol_change_pct = _calc_change_and_volume(f_hist)
-        futures_today = float(f_hist["Close"].iloc[-1])
-
-        s_hist = _fetch_hist_valid(SPOT_TICKER)
-        spot_price = float(s_hist["Close"].iloc[-1]) if s_hist is not None else None
-        price_spread = (futures_today - spot_price) if spot_price is not None else 0.0
-
-        return {
-            "ok": True,
-            "futures_change_pct": change_pct,
-            "volume_change_pct": vol_change_pct,
-            "price_spread": price_spread,
-        }
-
-    logger.warning(f"[期貨] {FUTURES_TICKER} 無有效資料，切換備援至 {SPOT_TICKER}")
-
-    # 備援：使用 ^TWII 大盤指數
-    s_hist = _fetch_hist_valid(SPOT_TICKER)
-    if s_hist is not None:
-        change_pct, vol_change_pct = _calc_change_and_volume(s_hist)
+    hist = _fetch_hist_valid(SPOT_TICKER)
+    if hist is not None:
+        change_pct, vol_change_pct = _calc_change_and_volume(hist)
         return {
             "ok": True,
             "futures_change_pct": change_pct,
@@ -76,7 +52,7 @@ def _fetch_futures_raw() -> dict:
             "price_spread": 0.0,
         }
 
-    logger.error(f"[期貨] {FUTURES_TICKER} 與 {SPOT_TICKER} 均無法取得資料，futures_score 設為 0")
+    logger.error(f"[期貨] {SPOT_TICKER} 無法取得資料，futures_score 設為 0")
     return {"ok": False}
 
 
