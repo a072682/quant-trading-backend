@@ -63,7 +63,7 @@ def _fetch_futures_raw() -> dict:
             "price_spread": price_spread,
         }
 
-    logger.warning(f"[futures] {FUTURES_TICKER} 無有效資料，改用 {SPOT_TICKER} 作為備援")
+    logger.warning(f"[期貨] {FUTURES_TICKER} 無有效資料，切換備援至 {SPOT_TICKER}")
 
     # 備援：使用 ^TWII 大盤指數
     s_hist = _fetch_hist_valid(SPOT_TICKER)
@@ -76,7 +76,7 @@ def _fetch_futures_raw() -> dict:
             "price_spread": 0.0,
         }
 
-    logger.error(f"[futures] {FUTURES_TICKER} 與 {SPOT_TICKER} 均無法取得資料，futures_score 設為 0")
+    logger.error(f"[期貨] {FUTURES_TICKER} 與 {SPOT_TICKER} 均無法取得資料，futures_score 設為 0")
     return {"ok": False}
 
 
@@ -119,5 +119,5 @@ async def get_futures_data() -> dict:
             "futures_score": futures_score,
         }
     except Exception as e:
-        logger.error(f"[futures] 取得台指期貨資料時發生例外：{e}")
+        logger.error(f"[期貨] 取得台指期貨資料時發生例外：{e}")
         return {"futures_change_pct": 0.0, "volume_change_pct": 0.0, "price_spread": 0.0, "futures_score": 0}

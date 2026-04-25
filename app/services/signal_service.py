@@ -346,7 +346,7 @@ async def get_top_signals(
     exclude_codes: list[str] | None = None,
 ) -> list[Signal]:
     today = date.today().strftime("%Y-%m-%d")
-    print(f"[get_top_signals] 查詢條件：date={today}, min_score={min_score}, exclude={exclude_codes}")
+    print(f"[取得高分訊號] 查詢條件：日期={today}，最低分數={min_score}，排除={exclude_codes}")
     conditions = [Signal.date == today, Signal.total_score >= min_score]
     if exclude_codes:
         conditions.append(Signal.stock_code.notin_(exclude_codes))
@@ -357,7 +357,7 @@ async def get_top_signals(
         .limit(limit)
     )
     signals = result.scalars().all()
-    print(f"[get_top_signals] 符合條件的股票數：{len(signals)}")
+    print(f"[取得高分訊號] 符合條件的股票數：{len(signals)} 檔")
     return signals
 
 

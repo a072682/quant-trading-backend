@@ -110,22 +110,22 @@ async def _update_filter_status(
             if error_message is not None:
                 fs.error_message = error_message[:500]
         await db.commit()
-        print(f"[filter_status] status_id={status_id} 已更新為 {status}，stock_count={stock_count}")
+        print(f"[篩選狀態] status_id={status_id} 已更新為 {status}，股票數={stock_count}")
 
 
 async def _run_filter_background(status_id: str) -> None:
     """背景執行篩選：各步驟使用獨立 session，避免 session 狀態交叉污染"""
-    print(f"[filter_bg] 開始篩選... status_id={status_id}")
+    print(f"[股票池篩選] 開始執行背景篩選，status_id={status_id}")
     try:
         # Step 1: 執行篩選
         stocks = await filter_stock_pool()
-        print(f"[filter_bg] TWSE 取得 {len(stocks)} 檔股票（通過篩選條件）")
+        print(f"[股票池篩選] TWSE 取得 {len(stocks)} 檔股票（已通過篩選條件）")
 
         # Step 2: 存入 stock_pool（獨立 session）
         async with AsyncSessionLocal() as db:
-            print(f"[filter_bg] 開始寫入 stock_pool 資料表，共 {len(stocks)} 筆...")
+            print(f"[股票池篩選] 開始寫入股票池資料表，共 {len(stocks)} 筆...")
             await save_stock_pool(stocks, db)
-            print(f"[filter_bg] 篩選完成，共 {len(stocks)} 檔存入資料庫 ✓")
+            print(f"[股票池篩選] 篩選完成，共 {len(stocks)} 檔成功寫入資料庫")
 
         # Step 3: 更新 FilterStatus（再另一個獨立 session）
         await _update_filter_status(
@@ -133,13 +133,13 @@ async def _run_filter_background(status_id: str) -> None:
         )
 
     except Exception as exc:
-        print(f"[filter_bg] 篩選任務失敗: {exc}")
+        print(f"[股票池篩選] 篩選任務失敗：{exc}")
         try:
             await _update_filter_status(
                 status_id, status="failed", error_message=str(exc)
             )
         except Exception as inner:
-            print(f"[filter_bg] 更新 failed 狀態也失敗: {inner}")
+            print(f"[股票池篩選] 更新失敗狀態時亦發生例外：{inner}")
 
 
 @router.post("/filter", response_model=APIResponse)

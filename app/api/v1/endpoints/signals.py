@@ -160,8 +160,8 @@ async def get_top_signals(
         )
     )
     exclude_codes = [row[0] for row in open_result.all()]
-    print(f"[top] exclude_codes: {exclude_codes}")
-    print(f"[top] min_score: {min_score}, limit: {limit}")
+    print(f"[今日推薦] 排除持倉中的股票：{exclude_codes}")
+    print(f"[今日推薦] 查詢條件：最低分數={min_score}，筆數限制={limit}")
 
     records = await signal_service.get_top_signals(
         db, limit=limit, min_score=min_score, exclude_codes=exclude_codes
