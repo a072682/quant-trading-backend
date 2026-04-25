@@ -71,7 +71,7 @@ async def _run_full_background() -> None:
         print(f"[全量評分] 所有股票評分完成，共 {completed}/{total} 檔")
 
         async with AsyncSessionLocal() as db:
-            await _apply_ai_to_top_signals(db, top_n=5)
+            await _apply_ai_to_top_signals(db, min_score=6)
 
         print("[全量評分] 全部完成，含 AI 分析")
     except Exception as exc:

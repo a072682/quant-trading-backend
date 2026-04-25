@@ -30,17 +30,17 @@ async def _get_scan_targets(db) -> list[dict]:
     return WATCH_LIST
 
 
-async def _apply_ai_to_top_signals(db, top_n: int = 5) -> None:
-    """對今日分數最高的前 N 名執行 AI 分析並更新資料庫"""
+async def _apply_ai_to_top_signals(db, min_score: int = 6, max_count: int = 10) -> None:
+    """對今日 total_score >= min_score 的股票執行 AI 分析，最多分析 max_count 筆"""
     today = date.today().strftime("%Y-%m-%d")
     result = await db.execute(
         select(Signal)
-        .where(Signal.date == today)
+        .where(Signal.date == today, Signal.total_score >= min_score)
         .order_by(desc(Signal.total_score))
-        .limit(top_n)
+        .limit(max_count)
     )
     top_signals = result.scalars().all()
-    print(f"[AI分析] 開始分析前 {len(top_signals)} 名股票")
+    print(f"[AI分析] 符合條件（>= {min_score} 分）共 {len(top_signals)} 檔，開始分析")
 
     for signal in top_signals:
         try:
@@ -92,7 +92,7 @@ async def run_daily_signal_job():
         print(f"階段一完成：成功 {success} 檔，失敗 {failed} 檔")
 
         # 階段二：只對今日前 5 名執行 AI 分析
-        await _apply_ai_to_top_signals(db, top_n=5)
+        await _apply_ai_to_top_signals(db, min_score=6)
 
         closed_positions = await check_and_close_positions(db)
         print(f"平倉筆數：{len(closed_positions)} 筆")
