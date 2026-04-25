@@ -10,9 +10,10 @@ from app.api.deps import get_db, get_current_user
 from app.schemas.common import APIResponse
 from app.schemas.signal import SignalOut
 
-from sqlalchemy import select as sa_select
+from sqlalchemy import select as sa_select, func
 from app.models.simulation import SimulationTrade
 from app.models.stock_pool import StockPool
+from app.models.signal import Signal
 from app.services import signal_service
 from app.services.signal_service import create_today_signal
 from app.scheduler.jobs import WATCH_LIST, _apply_ai_to_top_signals
@@ -35,12 +36,11 @@ class RunNowBody(BaseModel):
 
 router = APIRouter()
 
-_full_scan_running: bool = False
 _background_tasks: set[asyncio.Task] = set()
 
 
 async def _run_full_background() -> None:
-    global _full_scan_running
+    print("[全量評分] 任務鎖定，防止重複觸發")
     try:
         async with AsyncSessionLocal() as db:
             result = await db.execute(sa_select(StockPool.stock_code, StockPool.stock_name))
@@ -76,7 +76,7 @@ async def _run_full_background() -> None:
     except Exception as exc:
         print(f"[全量評分] 任務發生例外：{exc}")
     finally:
-        _full_scan_running = False
+        print("[全量評分] 任務結束，鎖定解除")
 
 
 @router.get("/today", response_model=APIResponse[SignalOut])
@@ -217,17 +217,22 @@ async def get_top_signals(
 
 @router.post("/run-full", status_code=status.HTTP_202_ACCEPTED, response_model=APIResponse)
 async def run_full_signal(
+    db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
     """對 stock_pool 所有股票執行全量評分（背景執行），完成後對前 5 名補跑 AI 分析。"""
-    global _full_scan_running
-    if _full_scan_running:
+    from datetime import date as _date
+    today = _date.today().strftime("%Y-%m-%d")
+    count_result = await db.execute(
+        sa_select(func.count()).select_from(Signal).where(Signal.date == today)
+    )
+    today_count = count_result.scalar()
+    if today_count > 10:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="全量評分任務已在執行中，請稍後再試",
+            detail=f"今日已有 {today_count} 筆評分記錄，全量評分已執行過或正在執行中，請勿重複觸發",
         )
 
-    _full_scan_running = True
     task = asyncio.create_task(_run_full_background())
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
