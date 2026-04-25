@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from typing import List, Optional
 from pydantic import BaseModel
@@ -13,7 +15,8 @@ from app.models.simulation import SimulationTrade
 from app.models.stock_pool import StockPool
 from app.services import signal_service
 from app.services.signal_service import create_today_signal
-from app.scheduler.jobs import WATCH_LIST
+from app.scheduler.jobs import WATCH_LIST, _apply_ai_to_top_signals
+from app.db.session import AsyncSessionLocal
 
 
 class RunStockBody(BaseModel):
@@ -31,6 +34,49 @@ class RunNowBody(BaseModel):
 
 
 router = APIRouter()
+
+_full_scan_running: bool = False
+_background_tasks: set[asyncio.Task] = set()
+
+
+async def _run_full_background() -> None:
+    global _full_scan_running
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(sa_select(StockPool.stock_code, StockPool.stock_name))
+            pool_rows = result.all()
+
+        targets = [{"code": row[0], "name": row[1]} for row in pool_rows]
+        total = len(targets)
+        print(f"[全量評分] 開始執行，共 {total} 檔")
+
+        completed = 0
+        async with AsyncSessionLocal() as db:
+            for stock in targets:
+                try:
+                    await create_today_signal(
+                        stock_code=stock["code"],
+                        stock_name=stock["name"],
+                        db=db,
+                        skip_ai=True,
+                    )
+                except Exception as exc:
+                    print(f"[全量評分] {stock['code']} 評分失敗：{exc}")
+                finally:
+                    completed += 1
+                    if completed % 10 == 0:
+                        print(f"[全量評分] 進度：{completed}/{total} 完成")
+
+        print(f"[全量評分] 所有股票評分完成，共 {completed}/{total} 檔")
+
+        async with AsyncSessionLocal() as db:
+            await _apply_ai_to_top_signals(db, top_n=5)
+
+        print("[全量評分] 全部完成，含 AI 分析")
+    except Exception as exc:
+        print(f"[全量評分] 任務發生例外：{exc}")
+    finally:
+        _full_scan_running = False
 
 
 @router.get("/today", response_model=APIResponse[SignalOut])
@@ -167,3 +213,23 @@ async def get_top_signals(
         db, limit=limit, min_score=min_score, exclude_codes=exclude_codes
     )
     return APIResponse(message=f"取得今日 Top{limit} 推薦成功", data=records)
+
+
+@router.post("/run-full", status_code=status.HTTP_202_ACCEPTED, response_model=APIResponse)
+async def run_full_signal(
+    _=Depends(get_current_user),
+):
+    """對 stock_pool 所有股票執行全量評分（背景執行），完成後對前 5 名補跑 AI 分析。"""
+    global _full_scan_running
+    if _full_scan_running:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="全量評分任務已在執行中，請稍後再試",
+        )
+
+    _full_scan_running = True
+    task = asyncio.create_task(_run_full_background())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+    return APIResponse(message="全量評分已開始，將在背景執行，完成後自動更新資料庫")
