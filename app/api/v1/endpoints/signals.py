@@ -10,6 +10,7 @@ from app.schemas.signal import SignalOut
 
 from sqlalchemy import select as sa_select
 from app.models.simulation import SimulationTrade
+from app.models.stock_pool import StockPool
 from app.services import signal_service
 from app.services.signal_service import create_today_signal
 from app.scheduler.jobs import WATCH_LIST
@@ -100,14 +101,20 @@ async def run_signal_now(
     _=Depends(get_current_user),
 ):
     """手動觸發評分計算（含 AI 分析）。
-    傳入 stocks 則只計算指定清單；不傳則使用預設 WATCH_LIST 5 檔。
-    完整股票池掃描請等待每日 14:00 排程自動執行。
+    傳入 stocks 則只計算指定清單；不傳則從 stock_pool 讀取完整清單，pool 為空才退回 WATCH_LIST。
     """
-    targets = (
-        [{"code": s.code, "name": s.name} for s in body.stocks]
-        if body.stocks
-        else WATCH_LIST
-    )
+    if body.stocks:
+        targets = [{"code": s.code, "name": s.name} for s in body.stocks]
+    else:
+        pool_result = await db.execute(
+            sa_select(StockPool.stock_code, StockPool.stock_name)
+        )
+        pool_rows = pool_result.all()
+        targets = (
+            [{"code": row[0], "name": row[1]} for row in pool_rows]
+            if pool_rows
+            else WATCH_LIST
+        )
 
     results = []
     for stock in targets:

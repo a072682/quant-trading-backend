@@ -280,7 +280,16 @@ async def create_today_signal(
         )
         existing_open_position = open_position_result.scalars().first()
 
-        if existing_open_position is None:
+        today_buy_result = await db.execute(
+            select(SimulationTrade).where(
+                SimulationTrade.stock_code == stock_code,
+                SimulationTrade.date == today,
+                SimulationTrade.action == "buy",
+            )
+        )
+        today_buy_exists = today_buy_result.scalars().first()
+
+        if existing_open_position is None and today_buy_exists is None:
             await create_simulation_buy(
                 stock_code=stock_code,
                 stock_name=stock_name,

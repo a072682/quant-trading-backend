@@ -7,53 +7,68 @@ import yfinance as yf
 _thread_pool = ThreadPoolExecutor(max_workers=2)
 logger = logging.getLogger(__name__)
 
-FUTURES_TICKER = "FITX=F"
+FUTURES_TICKER = "TWN=F"
 SPOT_TICKER = "^TWII"
 
 
+def _fetch_hist_valid(ticker_symbol: str) -> "pd.DataFrame | None":
+    """取得歷史資料並確認 Close 欄位有有效數值，否則回傳 None。"""
+    import pandas as pd
+    ticker = yf.Ticker(ticker_symbol)
+    hist = ticker.history(period="2d")
+    if hist.empty:
+        return None
+    if "Close" not in hist.columns or not hist["Close"].notna().any():
+        return None
+    hist = hist.dropna(subset=["Close"])
+    if len(hist) < 1:
+        return None
+    return hist
+
+
+def _calc_change_and_volume(hist) -> tuple[float, float]:
+    """計算漲跌幅與成交量變化率。"""
+    close = hist["Close"]
+    today_price = float(close.iloc[-1])
+    prev_price = float(close.iloc[-2]) if len(close) >= 2 else today_price
+    change_pct = (today_price - prev_price) / prev_price * 100 if prev_price != 0 else 0.0
+
+    if "Volume" in hist.columns and hist["Volume"].notna().any():
+        vol = hist["Volume"].dropna()
+        today_vol = float(vol.iloc[-1]) if len(vol) >= 1 else 0.0
+        prev_vol = float(vol.iloc[-2]) if len(vol) >= 2 else 0.0
+    else:
+        today_vol = prev_vol = 0.0
+
+    vol_change_pct = (today_vol - prev_vol) / prev_vol * 100 if prev_vol != 0 else 0.0
+    return change_pct, vol_change_pct
+
+
 def _fetch_futures_raw() -> dict:
-    # Try FITX=F (Taiwan futures on CME)
-    futures = yf.Ticker(FUTURES_TICKER)
-    f_hist = futures.history(period="2d")
+    # 先嘗試 TWN=F（CME 台灣期貨）
+    f_hist = _fetch_hist_valid(FUTURES_TICKER)
 
-    spot = yf.Ticker(SPOT_TICKER)
-    s_hist = spot.history(period="2d")
-
-    if not f_hist.empty and len(f_hist) >= 1:
+    if f_hist is not None:
+        change_pct, vol_change_pct = _calc_change_and_volume(f_hist)
         futures_today = float(f_hist["Close"].iloc[-1])
-        futures_prev = float(f_hist["Close"].iloc[-2]) if len(f_hist) >= 2 else futures_today
-        futures_change_pct = (futures_today - futures_prev) / futures_prev * 100 if futures_prev != 0 else 0.0
 
-        today_volume = float(f_hist["Volume"].iloc[-1]) if "Volume" in f_hist.columns else 0.0
-        yesterday_volume = float(f_hist["Volume"].iloc[-2]) if len(f_hist) >= 2 and "Volume" in f_hist.columns else 0.0
-        volume_change_pct = (
-            (today_volume - yesterday_volume) / yesterday_volume * 100
-            if yesterday_volume != 0
-            else 0.0
-        )
-
-        spot_price = float(s_hist["Close"].iloc[-1]) if not s_hist.empty else None
+        s_hist = _fetch_hist_valid(SPOT_TICKER)
+        spot_price = float(s_hist["Close"].iloc[-1]) if s_hist is not None else None
         price_spread = (futures_today - spot_price) if spot_price is not None else 0.0
 
         return {
             "ok": True,
-            "futures_change_pct": futures_change_pct,
-            "volume_change_pct": volume_change_pct,
+            "futures_change_pct": change_pct,
+            "volume_change_pct": vol_change_pct,
             "price_spread": price_spread,
         }
 
-    logger.warning(f"[futures] {FUTURES_TICKER} 無資料，改用 {SPOT_TICKER} 作為備援")
+    logger.warning(f"[futures] {FUTURES_TICKER} 無有效資料，改用 {SPOT_TICKER} 作為備援")
 
-    # Fallback: use ^TWII as proxy
-    if not s_hist.empty and len(s_hist) >= 1:
-        twii_today = float(s_hist["Close"].iloc[-1])
-        twii_prev = float(s_hist["Close"].iloc[-2]) if len(s_hist) >= 2 else twii_today
-        change_pct = (twii_today - twii_prev) / twii_prev * 100 if twii_prev != 0 else 0.0
-
-        today_vol = float(s_hist["Volume"].iloc[-1]) if "Volume" in s_hist.columns else 0.0
-        prev_vol = float(s_hist["Volume"].iloc[-2]) if len(s_hist) >= 2 and "Volume" in s_hist.columns else 0.0
-        vol_change_pct = (today_vol - prev_vol) / prev_vol * 100 if prev_vol != 0 else 0.0
-
+    # 備援：使用 ^TWII 大盤指數
+    s_hist = _fetch_hist_valid(SPOT_TICKER)
+    if s_hist is not None:
+        change_pct, vol_change_pct = _calc_change_and_volume(s_hist)
         return {
             "ok": True,
             "futures_change_pct": change_pct,
