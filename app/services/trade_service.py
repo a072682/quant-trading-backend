@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
-from app.models.trade import Trade
+from app.core.models.trade_model import Trade
 from app.services.fugle_service import fugle_service
 from app.schemas.trade import TradeBuyIn, TradeSellIn
 

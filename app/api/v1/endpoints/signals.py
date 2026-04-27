@@ -11,12 +11,12 @@ from app.schemas.common import APIResponse
 from app.schemas.signal import SignalOut
 
 from sqlalchemy import select as sa_select
-from app.models.simulation import SimulationTrade
-from app.models.stock_pool import StockPool
+from app.core.models.simulation_model import SimulationTrade
+from app.core.models.stock_pool_model import StockPool
 from app.services import signal_service
 from app.services.signal_service import create_today_signal
 from app.scheduler.jobs import WATCH_LIST, _apply_ai_to_top_signals
-from app.db.session import AsyncSessionLocal
+from app.core.db.session import AsyncSessionLocal
 
 
 class RunStockBody(BaseModel):

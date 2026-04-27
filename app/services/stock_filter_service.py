@@ -7,7 +7,7 @@ import yfinance as yf
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.stock_pool import StockPool
+from app.core.models.stock_pool_model import StockPool
 
 _thread_pool = ThreadPoolExecutor(max_workers=4)
 

@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession  # 非同步資料庫連線類型
 from sqlalchemy import select  # SQL SELECT 查詢建構器
 
-from app.models.user import User  # 使用者資料庫模型
+from app.core.models.user_model import User  # 使用者資料庫模型
 
 
 #region 函式：get_user_by_email — 用 email 查詢使用者
@@ -28,7 +28,6 @@ async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
 
 
 #region 函式：create_user — 建立新使用者並寫入資料庫
-
 async def create_user(
     db: AsyncSession,           # 資料庫連線（由端點透過 Depends 注入）
     email: str,                 # 使用者 email（唯一識別）
@@ -55,12 +54,10 @@ async def create_user(
 
     print(f"[會員服務] 使用者建立完成：{email}")  # 記錄建立結果
     return user  # 回傳帶有完整欄位（含 id）的 User 物件
-
 #endregion
 
 
 #region 函式：check_email_exists — 確認 email 是否已被註冊
-
 async def check_email_exists(db: AsyncSession, email: str) -> bool:
     """
     確認指定 email 是否已存在於資料庫。
@@ -75,5 +72,4 @@ async def check_email_exists(db: AsyncSession, email: str) -> bool:
     result = user is not None  # True 表示已存在，False 表示可以註冊
     print(f"[會員服務] 確認結果：{'已存在' if result else '可以註冊'}")  # 記錄確認結果
     return result
-
 #endregion

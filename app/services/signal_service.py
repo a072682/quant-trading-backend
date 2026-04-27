@@ -7,8 +7,8 @@ import yfinance as yf
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.signal import Signal
-from app.models.simulation import SimulationTrade
+from app.core.models.signal_model import Signal
+from app.core.models.simulation_model import SimulationTrade
 from app.services.ai_service import ai_service
 from app.services.futures_service import get_futures_data
 from app.services.simulation_service import create_simulation_buy

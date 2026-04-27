@@ -9,8 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
-from app.db.session import AsyncSessionLocal
-from app.models.stock_pool import FilterStatus, StockPool
+from app.core.db.session import AsyncSessionLocal
+from app.core.models.stock_pool_model import FilterStatus, StockPool
 from app.schemas.common import APIResponse
 from app.schemas.stock import KLineItem
 from app.schemas.stock_pool import FilterStatusOut, StockPoolItem

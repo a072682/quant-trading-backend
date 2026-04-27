@@ -3,9 +3,9 @@ from datetime import date
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import desc, select
 
-from app.db.session import AsyncSessionLocal
-from app.models.signal import Signal
-from app.models.stock_pool import StockPool
+from app.core.db.session import AsyncSessionLocal
+from app.core.models.signal_model import Signal
+from app.core.models.stock_pool_model import StockPool
 from app.services.ai_service import ai_service
 from app.services.signal_service import create_today_signal
 from app.services.simulation_service import check_and_close_positions

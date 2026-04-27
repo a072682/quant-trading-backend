@@ -4,7 +4,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
-from app.models.simulation import SimulationTrade
+from app.core.models.simulation_model import SimulationTrade
 from app.schemas.common import APIResponse
 from app.schemas.simulation import SimulationSummaryOut, SimulationTradeOut
 from app.services.simulation_service import get_simulation_summary

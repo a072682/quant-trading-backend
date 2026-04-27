@@ -27,7 +27,7 @@ from app.core.db.base import Base
 #
 # async def _recover_stale_filter_status() -> None:
 #     """將上次重啟前未完成的 running 狀態改為 failed"""
-#     from app.models.stock_pool import FilterStatus
+#     from app.core.models.stock_pool_model import FilterStatus
 #     async with AsyncSessionLocal() as db:
 #         result = await db.execute(
 #             select(FilterStatus).where(FilterStatus.status == "running")

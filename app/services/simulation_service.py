@@ -6,7 +6,7 @@ import yfinance as yf
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.simulation import SimulationTrade
+from app.core.models.simulation_model import SimulationTrade
 
 _thread_pool = ThreadPoolExecutor(max_workers=4)
 
