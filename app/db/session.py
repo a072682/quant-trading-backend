@@ -4,11 +4,12 @@ from sqlalchemy.ext.asyncio import (
     AsyncSession,
 )
 
-from app.core.config import settings
+from app.config.database_config import db_config
+from app.config.app_config import app_config
 
 engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=settings.APP_ENV == "development",
+    db_config.DATABASE_URL,
+    echo=app_config.APP_ENV == "development",
     pool_pre_ping=True,
     pool_recycle=300,
     pool_size=5,
