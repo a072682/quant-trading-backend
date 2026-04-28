@@ -7,6 +7,10 @@ from fastapi import APIRouter
 # 輸入：health.py 裡的 router = APIRouter()
 # 輸出：health_router（health.py 的路由器）
 from app.api.health.health import router as health_router
+
+# 從 auth.py 引入 router，並改名為 auth_router
+# 改名原因：避免與總路由器的 router 名稱衝突
+from app.api.auth.auth import router as auth_router
 #endregion
 
 #region 建立總路由器
@@ -21,6 +25,14 @@ router = APIRouter()
 # 輸出：GET /health → 自動對應到 health_check 函式
 # tags=["Health"]：API 文件的分類標籤（不影響實際運作）
 router.include_router(health_router, prefix="/health", tags=["Health"])
+
+# 把 auth_router 掛載到總路由器上
+# prefix="/auth"：所有 auth 的 API 路徑都會加上 /auth 前綴
+# 輸出：
+#   POST /auth/login    → 對應到 login 函式
+#   POST /auth/register → 對應到 register 函式
+#   POST /auth/logout   → 對應到 logout 函式
+router.include_router(auth_router, prefix="/auth", tags=["Auth"])
 
 # ── 以下路由暫時全部註解，架構重整中 ──────────────────────────
 # from app.api.v1.endpoints import auth, positions, signals, simulation, stocks, trades
