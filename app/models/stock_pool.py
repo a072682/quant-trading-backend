@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import String, Float, DateTime, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base
+from app.core.db.base import Base
 
 
 class StockPool(Base):
