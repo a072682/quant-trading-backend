@@ -11,6 +11,10 @@ from app.api.health.health import router as health_router
 # 從 auth.py 引入 router，並改名為 auth_router
 # 改名原因：避免與總路由器的 router 名稱衝突
 from app.api.auth.auth import router as auth_router
+
+# 從 stocks.py 引入 router，並改名為 stocks_router
+# 改名原因：避免與總路由器的 router 名稱衝突
+from app.api.stocks.stocks import router as stocks_router
 #endregion
 
 #region 建立總路由器
@@ -33,6 +37,14 @@ router.include_router(health_router, prefix="/health", tags=["Health"])
 #   POST /auth/register → 對應到 register 函式
 #   POST /auth/logout   → 對應到 logout 函式
 router.include_router(auth_router, prefix="/auth", tags=["Auth"])
+
+# 把 stocks_router 掛載到總路由器上
+# prefix="/stocks"：所有 stocks 的 API 路徑都會加上 /stocks 前綴
+# 輸出：
+#   POST /stocks/filter → 對應到 trigger_filter 函式
+#   GET  /stocks/pool   → 對應到 get_pool 函式
+#   GET  /stocks/status → 對應到 get_status 函式
+router.include_router(stocks_router, prefix="/stocks", tags=["Stocks"])
 
 # ── 以下路由暫時全部註解，架構重整中 ──────────────────────────
 # from app.api.v1.endpoints import auth, positions, signals, simulation, stocks, trades
