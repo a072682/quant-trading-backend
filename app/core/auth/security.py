@@ -16,6 +16,11 @@ from jose import JWTError, jwt
 # auth_config：讀取 JWT 相關設定（SECRET_KEY、ALGORITHM、過期時間）
 from app.core.config.auth_config import auth_config
 
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.db.session import get_db
+
 #endregion
 
 
@@ -110,10 +115,45 @@ def decode_token(token: str) -> Optional[str]:
     except JWTError:
         # Token 無效（簽名錯誤、格式錯誤）或已過期，回傳 None
         # 記錄驗證失敗
-        print(f"[安全模組] Token 無效或已過期")  
+        print(f"[安全模組] Token 無效或已過期")
 
         # decode_token
         # 回傳字串：None（無效或已過期）
         return None
 
+#endregion
+
+
+#region 函式：get_current_user — 驗證 token 並回傳目前登入的使用者
+# 作用：FastAPI 依賴注入函式，負責完整的 token 驗證流程
+#       從請求的 Authorization Header 取出 token
+#       呼叫 decode_token() 解讀 token
+#       解讀失敗 → 直接回傳 401 錯誤，拒絕存取
+#       解讀成功 → 回傳使用者 id
+# 輸入：credentials（前端帶來的 Authorization Header）
+#       db（資料庫連線，由 get_db 自動提供）
+# 輸出：使用者 id（字串）或 401 錯誤
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    db: AsyncSession = Depends(get_db),
+):
+    """驗證 JWT Token，回傳目前登入的使用者 id"""
+    print("[安全模組] 開始驗證使用者身份")
+
+    # 從 credentials 取出 token 字串並解讀
+    # 輸入：token 字串
+    # 輸出：使用者 id 或 None
+    user_id = decode_token(credentials.credentials)
+
+    if not user_id:
+        # token 無效或已過期，拒絕存取
+        print("[安全模組] 身份驗證失敗，拒絕存取")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token 無效或已過期",
+        )
+
+    # 回傳字串：使用者 id（驗證通過）
+    print(f"[安全模組] 身份驗證通過，使用者 id：{user_id}")
+    return user_id
 #endregion

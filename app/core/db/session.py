@@ -73,3 +73,18 @@ AsyncSessionLocal = async_sessionmaker(
     expire_on_commit=False,
 )
 #endregion
+
+#region 函式：get_db — 自動借出並歸還資料庫連線
+# 作用：FastAPI 依賴注入函式
+#       每次 API 請求時自動借出一條連線，請求結束後自動歸還
+# 輸入：無
+# 輸出：一條 AsyncSession 資料庫連線
+# 注意：使用 yield 而非 return
+#       讓 FastAPI 在請求結束後自動執行歸還動作
+async def get_db():
+    """提供資料庫連線，請求結束後自動關閉"""
+    print("[資料庫] 借出一條資料庫連線")
+    async with AsyncSessionLocal() as session:
+        yield session
+    print("[資料庫] 資料庫連線已歸還")
+#endregion
