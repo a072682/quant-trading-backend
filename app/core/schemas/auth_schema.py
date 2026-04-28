@@ -32,3 +32,19 @@ class RegisterIn(BaseModel):
     # 明碼密碼，後端會加密後才存入資料庫
     password: str
 #endregion
+
+
+#region 回應格式：LogoutOut — 登出成功後回傳的狀態資料
+# 作用：定義前端收到的登出回應格式
+# 輸入範例：LogoutOut(logged_out=True, timestamp="2026-04-27T14:00:00+00:00")
+# 輸出範例：
+# {
+#   "logged_out": true,
+#   "timestamp": "2026-04-27T14:00:00+00:00"
+# }
+class LogoutOut(BaseModel):
+    # 是否已登出，固定為 True
+    logged_out: bool = True
+    # 登出時間（UTC 時區，ISO 格式）
+    timestamp: str
+#endregion

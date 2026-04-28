@@ -11,6 +11,13 @@ from fastapi.security import OAuth2PasswordRequestForm
 #endregion
 
 
+#region 引入時間工具
+# datetime：取得當下時間
+# timezone：指定時區（使用 UTC）
+from datetime import datetime, timezone
+#endregion
+
+
 #region 引入資料庫連線依賴
 # AsyncSession：非同步資料庫連線物件類型
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +31,8 @@ from app.core.db.session import get_db
 # verify_password：驗證明碼密碼是否與雜湊密碼相符
 # create_access_token：產生 JWT Token
 # hash_password：將明碼密碼加密為雜湊字串
-from app.core.auth.security import verify_password, create_access_token, hash_password
+# get_current_user：驗證 token 並回傳目前登入的使用者 id
+from app.core.auth.security import verify_password, create_access_token, hash_password, get_current_user
 #endregion
 
 
@@ -34,7 +42,8 @@ from app.core.schemas.common import APIResponse
 
 # TokenOut：登入或註冊成功後回傳給前端的 Token 格式
 # RegisterIn：前端註冊時傳入的欄位格式（email、username、password）
-from app.core.schemas.auth_schema import TokenOut, RegisterIn
+# LogoutOut：登出成功後回傳給前端的狀態格式（logged_out、timestamp）
+from app.core.schemas.auth_schema import TokenOut, RegisterIn, LogoutOut
 #endregion
 
 
@@ -143,5 +152,31 @@ async def register(
     return APIResponse(
         message="註冊成功",
         data=TokenOut(access_token=token),
+    )
+#endregion
+
+
+#region 路由：POST /logout — 使用者登出
+# 作用：回傳登出成功訊息，前端收到後自行清除 token
+# 輸入：Authorization Header（帶著 token，確認使用者已登入才能登出）
+# 輸出：APIResponse[LogoutOut]（含登出狀態與時間）
+@router.post("/logout", response_model=APIResponse[LogoutOut])
+async def logout(
+    # get_current_user：依賴注入，驗證 token 並取得目前使用者 id
+    # 若 token 無效，FastAPI 自動回傳 401 錯誤
+    current_user: str = Depends(get_current_user),
+):
+    """使用者登出，回傳登出成功訊息，前端負責清除 token"""
+
+    print(f"[登出] 使用者登出，id：{current_user}")
+
+    # 回傳登出成功訊息與時間
+    # 輸出：logged_out=True、timestamp=當下時間
+    return APIResponse(
+        message="登出成功",
+        data=LogoutOut(
+            logged_out=True,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        ),
     )
 #endregion
