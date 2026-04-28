@@ -28,9 +28,13 @@ from app.core.auth.security import verify_password, create_access_token, hash_pa
 #endregion
 
 
-#region 引入 API 回應格式
+#region 引入 API 回應格式與請求 / 回應資料結構
 # APIResponse：統一的 API 回傳格式，包含 message 與 data 欄位
 from app.core.schemas.common import APIResponse
+
+# TokenOut：登入或註冊成功後回傳給前端的 Token 格式
+# RegisterIn：前端註冊時傳入的欄位格式（email、username、password）
+from app.core.schemas.auth_schema import TokenOut, RegisterIn
 #endregion
 
 
@@ -42,36 +46,10 @@ from app.services.auth.auth_service import get_user_by_email, create_user, check
 #endregion
 
 
-#region 引入 Pydantic 資料驗證
-# BaseModel：Pydantic 基礎模型，用來定義請求 / 回應的資料結構
-from pydantic import BaseModel
-#endregion
-
-
 #region 建立路由器
 # 此模組的所有路由都會掛在這個 router 下
 # 由 main.py 或上層 router 負責決定 prefix（如 /auth）
 router = APIRouter()
-#endregion
-
-
-#region 回應模型：TokenOut — 登入 / 註冊成功後回傳的 Token 資料
-# access_token：JWT Token 字串，前端每次請求需帶在 Authorization Header
-# token_type：固定為 "bearer"，告知前端 Token 的驗證方式
-class TokenOut(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-#endregion
-
-
-#region 請求模型：RegisterIn — 註冊時前端傳入的資料
-# email：使用者的電子信箱，作為唯一識別帳號
-# username：使用者顯示名稱
-# password：明碼密碼（後端會加密後才存入資料庫）
-class RegisterIn(BaseModel):
-    email: str
-    username: str
-    password: str
 #endregion
 
 
