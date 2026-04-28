@@ -7,8 +7,8 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db, get_current_user
 
-from app.schemas.common import APIResponse
-from app.schemas.signal import SignalOut
+from app.core.schemas.common import APIResponse
+from app.core.schemas.signal import SignalOut
 
 from sqlalchemy import select as sa_select
 from app.core.models.simulation_model import SimulationTrade

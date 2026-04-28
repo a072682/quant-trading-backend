@@ -3,7 +3,7 @@ from sqlalchemy import select, func
 
 from app.core.models.trade_model import Trade
 from app.services.fugle_service import fugle_service
-from app.schemas.trade import TradeBuyIn, TradeSellIn
+from app.core.schemas.trade import TradeBuyIn, TradeSellIn
 
 from datetime import date
 

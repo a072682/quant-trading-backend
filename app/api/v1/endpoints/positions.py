@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from app.api.deps import get_current_user
-from app.schemas.common import APIResponse
+from app.core.schemas.common import APIResponse
 from app.services import position_service
 
 router = APIRouter()

@@ -3,8 +3,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db, get_current_user
 
-from app.schemas.common import APIResponse
-from app.schemas.trade import TradeBuyIn, TradeSellIn, TradeOut, MonthlyStatsOut
+from app.core.schemas.common import APIResponse
+from app.core.schemas.trade import TradeBuyIn, TradeSellIn, TradeOut, MonthlyStatsOut
 
 from app.services import trade_service
 
