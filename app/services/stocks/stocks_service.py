@@ -30,6 +30,8 @@ async def save_stock_pool(stocks: list[dict], db: AsyncSession) -> None:
     # 刪除 stock_pool 資料表中的所有現有資料
     await db.execute(delete(StockPool))
 
+    print("[股票池] 清空舊資料完成")
+
     print(f"[股票池] 開始寫入 {len(stocks)} 筆資料...")
 
     # 取得當下 UTC 時間，作為所有新寫入資料的 updated_at

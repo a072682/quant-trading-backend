@@ -15,6 +15,10 @@ from app.api.auth.auth import router as auth_router
 # 從 stocks.py 引入 router，並改名為 stocks_router
 # 改名原因：避免與總路由器的 router 名稱衝突
 from app.api.stocks.stocks import router as stocks_router
+
+# 從 signals.py 引入 router，並改名為 signals_router
+# 改名原因：避免與總路由器的 router 名稱衝突
+from app.api.signals.signals import router as signals_router
 #endregion
 
 #region 建立總路由器
@@ -45,6 +49,14 @@ router.include_router(auth_router, prefix="/auth", tags=["Auth"])
 #   GET  /stocks/pool   → 對應到 get_pool 函式
 #   GET  /stocks/status → 對應到 get_status 函式
 router.include_router(stocks_router, prefix="/stocks", tags=["Stocks"])
+
+# 把 signals_router 掛載到總路由器上
+# prefix="/signals"：所有 signals 的 API 路徑都會加上 /signals 前綴
+# 輸出：
+#   POST /signals/run   → 對應到 run_scoring 函式
+#   GET  /signals/today → 對應到 get_today 函式
+#   GET  /signals/top   → 對應到 get_top 函式
+router.include_router(signals_router, prefix="/signals", tags=["Signals"])
 
 # ── 以下路由暫時全部註解，架構重整中 ──────────────────────────
 # from app.api.v1.endpoints import auth, positions, signals, simulation, stocks, trades
