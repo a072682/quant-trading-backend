@@ -10,7 +10,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 from app.core.db.base import Base
-from app.models import signal, trade, user, stock_pool  # noqa: F401
+from app.core.models import signal_model, trade_model, user_model, stock_pool_model, simulation_model  # noqa: F401
 
 target_metadata = Base.metadata
 
