@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 #region 資料庫設定
 class DatabaseConfig(BaseSettings):
     # 找到指定位置並讀取 .env 檔案讀取環境變數，編碼使用 UTF-8
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # 資料庫使用者名稱
     DB_USER: str = "postgres"

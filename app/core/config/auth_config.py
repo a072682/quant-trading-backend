@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class AuthConfig(BaseSettings):
     # 從 .env 檔案讀取環境變數，編碼使用 UTF-8
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # JWT 簽名密鑰，用來加密和驗證 Token（正式環境請換成長隨機字串）
     SECRET_KEY: str = "change_me_in_production"

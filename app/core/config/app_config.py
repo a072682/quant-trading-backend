@@ -11,7 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 #region 應用程式基本設定
 class AppConfig(BaseSettings):
     # 從 .env 檔案讀取環境變數，編碼使用 UTF-8
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # 執行環境，影響 Swagger 文件是否開啟（development 開啟，production 關閉）
     APP_ENV: str = "development"

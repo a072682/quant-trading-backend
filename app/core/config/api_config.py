@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class ApiConfig(BaseSettings):
     # 從 .env 檔案讀取環境變數，編碼使用 UTF-8
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Anthropic Claude API 金鑰，用於 AI 分析功能（未設定時 AI 功能會降級）
     ANTHROPIC_API_KEY: str = ""
