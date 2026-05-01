@@ -4,11 +4,39 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 #endregion
 
-#region 引入評分與篩選的背景任務函式
-# 這兩個函式是實際執行業務邏輯的地方
-# 排程器只負責計時，時間到就呼叫這兩個函式
-from app.services.signals.signals_service import run_signals_job
-from app.services.stocks.stocks_service import run_filter_job
+#region 引入評分背景任務函式
+# _run_scoring_task：實際執行評分邏輯的函式，不需要參數，可直接呼叫
+from app.api.signals.signals import _run_scoring_task
+#endregion
+
+#region 引入篩選所需的資料庫工具
+# AsyncSessionLocal：直接建立資料庫連線（排程器無法使用依賴注入）
+# FilterStatus：篩選任務狀態的 ORM 模型
+# datetime、timezone：產生 UTC 時間
+from app.core.db.session import AsyncSessionLocal
+from app.core.models.stock_pool_model import FilterStatus
+from app.api.stocks.stocks import _run_filter_task
+from datetime import datetime, timezone
+#endregion
+
+#region 包裝函式：scheduled_filter_job — 排程器專用的篩選觸發函式
+# 作用：排程器無法使用 FastAPI 的 BackgroundTasks 和依賴注入
+#       所以需要手動建立 FilterStatus 記錄，再呼叫 _run_filter_task
+async def scheduled_filter_job() -> None:
+    # 直接建立資料庫連線
+    async with AsyncSessionLocal() as db:
+        # 建立一筆新的 FilterStatus 記錄，狀態設為 running
+        fs = FilterStatus(
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+        db.add(fs)
+        await db.commit()
+        # 重新從資料庫讀取，取得資料庫自動產生的 id
+        await db.refresh(fs)
+
+    # 用取得的 id 呼叫實際的篩選函式
+    await _run_filter_task(fs.id)
 #endregion
 
 #region 建立排程器並設定定時任務
@@ -16,30 +44,29 @@ from app.services.stocks.stocks_service import run_filter_job
 # 輸出：設定完成的 AsyncIOScheduler 實例（尚未啟動）
 def create_scheduler() -> AsyncIOScheduler:
     # 建立排程器，指定時區為台北時間
-    # 所有 cron 設定的時間都會以 Asia/Taipei 為準
     scheduler = AsyncIOScheduler(timezone="Asia/Taipei")
 
     # 每天 14:00 自動執行全量評分
     # 台股收盤時間為 13:30，14:00 確保當日資料已更新完成
     scheduler.add_job(
-        run_signals_job,        # 要執行的函式
-        "cron",                 # 觸發方式：固定時間
-        hour=14,                # 每天 14 時
-        minute=0,               # 0 分
-        id="daily_signals",     # 任務唯一識別碼
-        replace_existing=True,  # 重複啟動時覆蓋舊任務，避免重複
+        _run_scoring_task,      # 直接呼叫，不需要包裝
+        "cron",
+        hour=14,
+        minute=0,
+        id="daily_signals",
+        replace_existing=True,
     )
 
     # 每週一 08:00 自動執行股票池篩選
     # 週一開盤前更新股票池，確保本週評分範圍是最新的
     scheduler.add_job(
-        run_filter_job,         # 要執行的函式
-        "cron",                 # 觸發方式：固定時間
-        day_of_week="mon",      # 每週一
-        hour=8,                 # 8 時
-        minute=0,               # 0 分
-        id="weekly_filter",     # 任務唯一識別碼
-        replace_existing=True,  # 重複啟動時覆蓋舊任務，避免重複
+        scheduled_filter_job,   # 透過包裝函式呼叫
+        "cron",
+        day_of_week="mon",
+        hour=8,
+        minute=0,
+        id="weekly_filter",
+        replace_existing=True,
     )
 
     return scheduler

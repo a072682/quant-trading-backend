@@ -100,7 +100,9 @@ async def _run_filter_task(filter_status_id: str) -> None:
             result = await db.execute(
                 select(FilterStatus).where(FilterStatus.id == filter_status_id)
             )
+
             fs = result.scalar_one_or_none()
+            
             if fs:
                 # 記錄完成時間與通過數量
                 fs.status = "completed"
