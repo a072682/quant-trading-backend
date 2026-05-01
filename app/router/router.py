@@ -27,14 +27,15 @@ router = APIRouter()
 #endregion
 
 #region 掛載各功能路由器
-# 把 health_router 掛載到總路由器上
+
+# 資料庫連線檢查API
 # 輸入：health_router（health.py 的路由器）
 # prefix="/health"：所有 health 的 API 路徑都會加上 /health 前綴
 # 輸出：GET /health → 自動對應到 health_check 函式
 # tags=["Health"]：API 文件的分類標籤（不影響實際運作）
 router.include_router(health_router, prefix="/health", tags=["Health"])
 
-# 把 auth_router 掛載到總路由器上
+# 會員登錄相關API
 # prefix="/auth"：所有 auth 的 API 路徑都會加上 /auth 前綴
 # 輸出：
 #   POST /auth/login    → 對應到 login 函式
@@ -42,7 +43,7 @@ router.include_router(health_router, prefix="/health", tags=["Health"])
 #   POST /auth/logout   → 對應到 logout 函式
 router.include_router(auth_router, prefix="/auth", tags=["Auth"])
 
-# 把 stocks_router 掛載到總路由器上
+# 抓取股票原始數據API
 # prefix="/stocks"：所有 stocks 的 API 路徑都會加上 /stocks 前綴
 # 輸出：
 #   POST /stocks/filter → 對應到 trigger_filter 函式
@@ -50,7 +51,7 @@ router.include_router(auth_router, prefix="/auth", tags=["Auth"])
 #   GET  /stocks/status → 對應到 get_status 函式
 router.include_router(stocks_router, prefix="/stocks", tags=["Stocks"])
 
-# 把 signals_router 掛載到總路由器上
+# 股票評分API
 # prefix="/signals"：所有 signals 的 API 路徑都會加上 /signals 前綴
 # 輸出：
 #   POST /signals/run   → 對應到 run_scoring 函式

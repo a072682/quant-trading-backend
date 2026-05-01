@@ -48,3 +48,16 @@ class LogoutOut(BaseModel):
     # 登出時間（UTC 時區，ISO 格式）
     timestamp: str
 #endregion
+
+
+#region 回應格式：VerifyOut — 確認 token 是否有效後回傳的狀態資料
+# 作用：定義前端收到的 token 驗證回應格式
+# 輸入範例：VerifyOut(valid=True)
+# 輸出範例：
+# {
+#     "valid": true
+# }
+class VerifyOut(BaseModel):
+    # token 是否有效，有效為 True
+    valid: bool = True
+#endregion

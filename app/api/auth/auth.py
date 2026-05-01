@@ -71,11 +71,12 @@ router = APIRouter()
 async def login(
     # OAuth2PasswordRequestForm：FastAPI 內建表單，自動解析 username / password
     form_data: OAuth2PasswordRequestForm = Depends(),
-    # get_db：依賴注入，自動借出一條資料庫連線，請求結束後自動歸還
+    # get_db：借出一條資料庫連線，請求結束後自動歸還
     db: AsyncSession = Depends(get_db),
 ):
     """使用者登入，驗證帳號密碼後回傳 JWT Token"""
 
+    # 印出登入訊息
     print(f"[登入] 收到登入請求，帳號：{form_data.username}")
 
     # 用 email 查詢使用者（form_data.username 欄位實際填入 email）
@@ -103,6 +104,27 @@ async def login(
     return APIResponse(
         message="登入成功",
         data=TokenOut(access_token=token),
+    )
+#endregion
+
+#region 路由：GET /verify — 確認 token 是否有效
+# 作用：前端頁面載入時呼叫，確認目前 token 是否仍然有效
+# 輸入：Authorization Header（帶著 token）
+# 輸出：APIResponse（token 有效回傳 valid=True，無效 FastAPI 自動回傳 401）
+@router.get("/verify", response_model=APIResponse)
+async def verify_token(
+    # get_current_user：依賴注入，驗證 token 並取得目前使用者 id
+    # 若 token 無效或過期，FastAPI 自動攔截並回傳 401，不會進入函式本體
+    current_user: str = Depends(get_current_user),
+):
+    """確認 token 是否有效，有效回傳 valid=True，無效則由 FastAPI 回傳 401"""
+
+    print(f"[驗證] token 有效，使用者 id：{current_user}")
+
+    # token 有效才會執行到這裡，直接回傳 valid=True
+    return APIResponse(
+        message="token 有效",
+        data={"valid": True},
     )
 #endregion
 
