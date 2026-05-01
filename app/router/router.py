@@ -19,6 +19,9 @@ from app.api.stocks.stocks import router as stocks_router
 # 從 signals.py 引入 router，並改名為 signals_router
 # 改名原因：避免與總路由器的 router 名稱衝突
 from app.api.signals.signals import router as signals_router
+
+# 引入模擬交易路由器
+from app.api.simulation.simulation import router as simulation_router
 #endregion
 
 #region 建立總路由器
@@ -59,13 +62,7 @@ router.include_router(stocks_router, prefix="/stocks", tags=["Stocks"])
 #   GET  /signals/top   → 對應到 get_top 函式
 router.include_router(signals_router, prefix="/signals", tags=["Signals"])
 
-# ── 以下路由暫時全部註解，架構重整中 ──────────────────────────
-# from app.api.v1.endpoints import auth, positions, signals, simulation, stocks, trades
-#
-# router.include_router(auth.router,       prefix="/auth",       tags=["Auth"])
-# router.include_router(signals.router,    prefix="/signals",    tags=["Signals"])
-# router.include_router(stocks.router,     prefix="/stocks",     tags=["Stocks"])
-# router.include_router(trades.router,     prefix="/trades",     tags=["Trades"])
-# router.include_router(positions.router,  prefix="/positions",  tags=["Positions"])
-# router.include_router(simulation.router, prefix="/simulation", tags=["Simulation"])
+# 模擬交易路由：/api/simulation
+router.include_router(simulation_router, prefix="/simulation", tags=["simulation"])
+
 #endregion

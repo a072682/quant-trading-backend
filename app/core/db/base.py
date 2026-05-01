@@ -5,6 +5,8 @@ from sqlalchemy.orm import DeclarativeBase
 #endregion
 
 
+
+
 #region 基底類別：Base — 所有資料表設計圖的共同祖先
 # 作用：作為所有資料表設計圖的集合點
 # 所有資料表設計圖（User、Signal 等）都必須繼承這個類別
