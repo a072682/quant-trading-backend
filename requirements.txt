@@ -8,7 +8,7 @@ bcrypt
 pydantic-settings
 python-multipart
 httpx
-apscheduler
+apscheduler>=3.10.0
 anthropic
 yfinance
 pandas
