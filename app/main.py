@@ -35,29 +35,41 @@ from app.scheduler.jobs import create_scheduler
 
 #region 內部函式：_recover_stale_filter_status — 修正殘留 running 狀態
 # 作用：伺服器重啟時，將上次未完成的 running 任務改為 failed
+# 將執行資料表中狀態為running的任務都改為failed
 # 原因：伺服器若意外重啟，背景任務會中斷但狀態仍停在 running
 #       不修正的話，下次觸發篩選會被防重複機制擋住
 async def _recover_stale_filter_status() -> None:
-    # 引入 FilterStatus ORM 模型
+    # 引入 FilterStatus 確認任務是否執行資料表
     from app.core.models.stock_pool_model import FilterStatus
 
-    # 直接建立資料庫連線（lifespan 裡無法使用依賴注入）
+    # 借出資料庫連線並命名為db
     async with AsyncSessionLocal() as db:
         # 查詢所有仍在 running 狀態的篩選任務
+        # execute執行()內部的SQL指令
         result = await db.execute(
+            # 搜尋FilterStatus中的status欄位是否有"running"的資料
             select(FilterStatus).where(FilterStatus.status == "running")
         )
+        #scalars()代表先將原始資料轉換為物件
+        #all()代表將所有資料都放入陣列
+        # 格式接近於[{}, {}, {}]
         stale = result.scalars().all()
 
         # 將每筆殘留的 running 任務改為 failed
+        # 對stale做迴圈並將內部的資料都命名為fs
         for fs in stale:
+            # 將欄位status改為"failed"
             fs.status = "failed"
+            # 將欄位completed_at寫入現在時間
             fs.completed_at = datetime.now(timezone.utc)
+            # 將欄位error_message改為"伺服器重啟，任務中斷"
             fs.error_message = "伺服器重啟，任務中斷"
 
         # 有殘留任務才 commit，避免多餘的資料庫操作
         if stale:
+            # 將讀取出來的stale重新存回去資料表
             await db.commit()
+            # 印出資料
             print(f"⚠️ 已將 {len(stale)} 筆殘留 running 狀態修正為 failed")
 #endregion
 
@@ -69,10 +81,12 @@ async def lifespan(app: FastAPI):
     
     # 應用程式啟動時執行：
     # engine.begin() 開啟一個資料庫連線
-    # conn.run_sync(Base.metadata.create_all) 檢查並建立所有資料表
-    # （如果資料表已存在則跳過，不會重複建立）
+    # async with engine.begin() 內建借出和歸還機制，區塊結束自動歸還
     async with engine.begin() as conn:
+        # conn.run_sync(Base.metadata.create_all) 檢查並建立所有資料表
+        # （如果資料表已存在則跳過，不會重複建立）
         await conn.run_sync(Base.metadata.create_all)
+    #印出資訊
     print("✅ 資料表初始化完成")
 
     # 修正上次重啟前未完成的 running 狀態
@@ -80,7 +94,9 @@ async def lifespan(app: FastAPI):
 
     # 建立並啟動排程器
     scheduler = create_scheduler()
+    # 排程器啟動
     scheduler.start()
+    # 印出訊息
     print("✅ 排程器啟動完成")
 
     # yield 是分界點：
@@ -90,6 +106,7 @@ async def lifespan(app: FastAPI):
 
     # 關閉排程器，釋放資源
     scheduler.shutdown()
+    # 印出訊息
     print("🛑 排程器已停止")
 
     # 應用程式關閉時執行：

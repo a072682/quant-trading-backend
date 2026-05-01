@@ -33,7 +33,7 @@ from app.core.auth.security import get_current_user
 
 
 #region 引入 ORM 模型
-# FilterStatus：篩選任務狀態資料表的 ORM 模型
+# 引入FilterStatus資料表，負責記錄篩選任務是否執行中
 from app.core.models.stock_pool_model import FilterStatus
 #endregion
 
@@ -81,16 +81,16 @@ router = APIRouter()
 async def _run_filter_task(filter_status_id: str) -> None:
     """背景執行完整篩選流程，並同步更新 FilterStatus 狀態"""
 
-    # 在背景任務中需要自行建立獨立的資料庫 Session
-    # 不能重用 request 的 Session，因為 request 結束後 Session 會被歸還
+    # 引入借出資料庫請求通道函式
     from app.core.db.session import AsyncSessionLocal
 
+    # 將AsyncSessionLocal命名為db
     async with AsyncSessionLocal() as db:
         try:
-            # 第一步：從 TWSE 抓取所有上市股票清單
+            # 第一步：抓取所有上市股票清單
             raw_stocks = await fetch_twse_stocks()
 
-            # 第二步：逐批查詢 yfinance，篩選符合殖利率與市值條件的股票
+            # 第二步：使用yfinance查詢篩選符合條件的股票
             passed_stocks = await filter_by_yfinance(raw_stocks)
 
             # 第三步：清空舊股票池，寫入新篩選結果
@@ -131,7 +131,6 @@ async def _run_filter_task(filter_status_id: str) -> None:
 
 
 #region 路由：POST /filter — 手動觸發股票池篩選（背景執行）
-# 作用：立即回傳 202 Accepted，在背景執行完整篩選流程
 # 輸入：
 #   background_tasks（FastAPI 背景任務管理器）
 #   current_user（依賴注入，驗證 token 確認已登入）
@@ -140,7 +139,7 @@ async def _run_filter_task(filter_status_id: str) -> None:
 # 防重複：若已有 running 狀態的任務，回傳 400 Bad Request
 @router.post("/filter", response_model=APIResponse, status_code=202)
 async def trigger_filter(
-    # BackgroundTasks：FastAPI 提供的背景任務管理器
+    # BackgroundTasks：FastAPI 提供的背景任務管理器，固定寫法不能變更
     background_tasks: BackgroundTasks,
     # get_current_user：驗證 token，確認使用者已登入
     current_user: str = Depends(get_current_user),
@@ -148,42 +147,70 @@ async def trigger_filter(
     db: AsyncSession = Depends(get_db),
 ):
     """手動觸發股票池篩選，立即回傳 202，篩選在背景執行"""
-
+    
+    # 印出篩選訊息
     print(f"[篩選 API] 使用者 {current_user} 觸發篩選")
 
     # 防止重複執行：查詢是否已有 running 狀態的任務
+    # 先搜尋FilterStatus這個資料表確認欄位status是否有等於running並將結果傳回result
+    # 但result目前並不能讀取(會是一團記憶體位置)
     result = await db.execute(
         select(FilterStatus).where(FilterStatus.status == "running")
     )
+    # scalar_one_or_none代表從查詢結果裡取出第一筆資料的第一個欄位，如果沒有就回傳 None
+    # 可能會是以下格式內容:
+    # running.id           # "abc-123-def-456"
+    # running.status       # "running"
+    # running.started_at   # 2026-05-01 14:00:00
+    # running.stock_count  # None（還在跑，還不知道）
+    # running.error_message # None
+    # 或是
+    # running  # None
     running = result.scalar_one_or_none()
 
+    # 如果running有資料則執行
     if running:
-        # 已有任務在執行中，拒絕新任務
+        # 印出訊息
         print("[篩選 API] 已有篩選任務在執行中，拒絕重複觸發")
+
+        # raise代表輸出錯誤訊息並停止函式執行
+        # HTTPException代表錯誤訊息的格式
         raise HTTPException(
-            # 400 Bad Request：請求不合法（重複觸發）
+            # 400 Bad Request：錯誤訊息內容
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="篩選任務執行中，請稍後再試",
         )
 
-    # 建立新的 FilterStatus 紀錄，狀態設為 running
+    # FilterStatus 寫入新資料，設定status欄位資料為 running以及時間
     fs = FilterStatus(
         status="running",
         # 記錄任務開始時間（UTC）
         started_at=datetime.now(timezone.utc),
     )
+    # add代表先將資料放入像是購物車的空間
     db.add(fs)
-    # 先 commit 取得 id，背景任務才能用 id 查詢並更新狀態
+    # 執行放入購物車的檔案
     await db.commit()
+    # 重新從資料表讀取資料
+    # 會像是這樣
+    # fs.id             # "abc-123-def-456"  ← 資料庫自動產生
+    # fs.status         # "running"
+    # fs.started_at     # 2026-05-01 14:00:00
+    # fs.completed_at   # None（還沒完成）
+    # fs.stock_count    # None（還沒跑完）
+    # fs.error_message  # None（沒有錯誤）
     await db.refresh(fs)
 
     # 將完整篩選流程加入背景任務佇列
     # FastAPI 會在回傳 response 後自動執行
+    # background_tasks 代表先把 API 回應送給前端，然後再在背景執行耗時的工作
+    # add_task() 代表工作加入背景任務清單，格式是：.add_task(要執行的函式, 參數1, 參數2, ...)
     background_tasks.add_task(_run_filter_task, fs.id)
 
+    # 印出訊息
     print(f"[篩選 API] 背景任務已啟動，FilterStatus id：{fs.id}")
 
-    # 立即回傳 202 Accepted，讓前端知道任務已接受
+    # 立即回傳APIResponse設定的格式資料，讓前端知道任務已接受
     return APIResponse(message="篩選任務已啟動，請稍後透過 GET /status 查詢進度")
 #endregion
 
@@ -201,8 +228,12 @@ async def get_pool(
     # get_db：依賴注入，自動借出並歸還資料庫連線
     db: AsyncSession = Depends(get_db),
 ):
-    """取得股票池清單，回傳所有通過篩選的股票"""
+    """
+        取得股票池清單，回傳所有通過篩選的股票
+        前端股票池管理的"上次篩選時間"和"目前股票池數量"資料由此API提供
+    """
 
+    # 印出資訊
     print(f"[股票池 API] 使用者 {current_user} 查詢股票池")
 
     # 呼叫 service 查詢股票池所有股票
